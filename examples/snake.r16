@@ -1,0 +1,226 @@
+__meta__
+title=snake
+author=rico-16
+description=the classic snake, 40 by 28 cells, arrows to steer
+__code__
+// snake: 40x28 cells of 8x8 pixels under a 16-pixel HUD.
+// arrows steer, z restarts after a crash. walls and your own tail are fatal.
+
+let snake_x = [];
+let snake_y = [];
+let dir_x = 1;
+let dir_y = 0;
+let next_x = 1;
+let next_y = 0;
+let food_x = 30;
+let food_y = 14;
+let score = 0;
+let best = 0;
+let tick = 0;
+let game_over = false;
+let won = false;
+
+// Script functions cannot see the globals above (Rhai gives a nested call its
+// own scope), so the two helpers take everything they need as arguments.
+
+fn snake_at(x, y, xs, ys) {
+    let i = 0;
+    while i < xs.len() {
+        if xs[i] == x && ys[i] == y {
+            return true;
+        }
+        i += 1;
+    }
+    false;
+}
+
+// Returns [x, y], or an empty array when the board is full.
+fn place_food(xs, ys) {
+    // Random placement first, with a deterministic scan as the fallback so a
+    // nearly full board can never loop forever.
+    let tries = 0;
+    while tries < 200 {
+        let fx = random_int(0, 39);
+        let fy = random_int(0, 27);
+        if !snake_at(fx, fy, xs, ys) {
+            return [fx, fy];
+        }
+        tries += 1;
+    }
+
+    let fy = 0;
+    while fy < 28 {
+        let fx = 0;
+        while fx < 40 {
+            if !snake_at(fx, fy, xs, ys) {
+                return [fx, fy];
+            }
+            fx += 1;
+        }
+        fy += 1;
+    }
+    [];
+}
+
+fn on_init() {
+    system::seed(1987);
+    snake_x = [17, 18, 19, 20];
+    snake_y = [14, 14, 14, 14];
+    dir_x = 1;
+    dir_y = 0;
+    next_x = 1;
+    next_y = 0;
+    score = 0;
+    tick = 0;
+    game_over = false;
+    won = false;
+
+    let spot = place_food(snake_x, snake_y);
+    if spot.len() == 2 {
+        food_x = spot[0];
+        food_y = spot[1];
+    }
+}
+
+fn on_update(dt) {
+    if game_over {
+        if input::pressed(Button::Z) {
+            snake_x = [17, 18, 19, 20];
+            snake_y = [14, 14, 14, 14];
+            dir_x = 1;
+            dir_y = 0;
+            next_x = 1;
+            next_y = 0;
+            score = 0;
+            tick = 0;
+            game_over = false;
+            won = false;
+            let spot = place_food(snake_x, snake_y);
+            if spot.len() == 2 {
+                food_x = spot[0];
+                food_y = spot[1];
+            }
+        }
+        return;
+    }
+
+    // One direction change per frame, and never a 180-degree turn.
+    if input::pressed(Button::Left) && dir_x != 1 {
+        next_x = -1;
+        next_y = 0;
+    } else if input::pressed(Button::Right) && dir_x != -1 {
+        next_x = 1;
+        next_y = 0;
+    } else if input::pressed(Button::Up) && dir_y != 1 {
+        next_x = 0;
+        next_y = -1;
+    } else if input::pressed(Button::Down) && dir_y != -1 {
+        next_x = 0;
+        next_y = 1;
+    }
+
+    // Faster as the snake grows: 7 frames per cell down to 3.
+    let speed = 7 - score / 5;
+    if speed < 3 {
+        speed = 3;
+    }
+    tick += 1;
+    if tick < speed {
+        return;
+    }
+    tick = 0;
+    dir_x = next_x;
+    dir_y = next_y;
+
+    let hx = snake_x[snake_x.len() - 1] + dir_x;
+    let hy = snake_y[snake_y.len() - 1] + dir_y;
+
+    if hx < 0 || hx > 39 || hy < 0 || hy > 27 {
+        game_over = true;
+        if score > best {
+            best = score;
+        }
+        return;
+    }
+
+    let eating = hx == food_x && hy == food_y;
+
+    // The tail moves away this frame unless the snake is eating, so it is not
+    // an obstacle in that case.
+    let limit = snake_x.len();
+    if !eating {
+        limit -= 1;
+    }
+    let i = 0;
+    while i < limit {
+        if snake_x[i] == hx && snake_y[i] == hy {
+            game_over = true;
+            if score > best {
+                best = score;
+            }
+            return;
+        }
+        i += 1;
+    }
+
+    snake_x.push(hx);
+    snake_y.push(hy);
+
+    if eating {
+        score += 1;
+        if score > best {
+            best = score;
+        }
+        let spot = place_food(snake_x, snake_y);
+        if spot.len() == 2 {
+            food_x = spot[0];
+            food_y = spot[1];
+        } else {
+            game_over = true;
+            won = true;
+        }
+    } else {
+        snake_x.remove(0);
+        snake_y.remove(0);
+    }
+}
+
+fn on_draw() {
+    gfx::clear(0);
+
+    // HUD
+    gfx::rect_filled(0, 0, 320, 16, 1);
+    gfx::text("SCORE " + score.to_string(), 4, 4, 5);
+    let best_text = "BEST " + best.to_string();
+    gfx::text(best_text, 316 - gfx::text_width(best_text), 4, 3);
+
+    // Food
+    gfx::circle_filled(food_x * 8 + 4, 16 + food_y * 8 + 4, 3, 8);
+
+    // Snake: the head at the end of the arrays, striped body behind it.
+    let i = 0;
+    while i < snake_x.len() {
+        let color = if i == snake_x.len() - 1 {
+            9
+        } else if i % 2 == 0 {
+            10
+        } else {
+            11
+        };
+        gfx::rect_filled(snake_x[i] * 8 + 1, 16 + snake_y[i] * 8 + 1, 6, 6, color);
+        i += 1;
+    }
+
+    if game_over {
+        gfx::rect_filled(80, 88, 160, 64, 1);
+        gfx::rect(80, 88, 160, 64, 5);
+        if won {
+            gfx::text("YOU WIN", 132, 104, 8);
+        } else {
+            gfx::text("GAME OVER", 124, 104, 6);
+        }
+        let score_text = "SCORE " + score.to_string();
+        gfx::text(score_text, (320 - gfx::text_width(score_text)) / 2, 120, 5);
+        gfx::text("PRESS Z", 132, 136, 5);
+    }
+}

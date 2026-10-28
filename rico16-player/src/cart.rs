@@ -155,7 +155,7 @@ pub enum CartRunnerError {
 mod tests {
     use super::*;
     use rico16_cart::text::Meta;
-    use rico16_core::input::Input;
+    use rico16_core::input::{Button, Input};
 
     fn empty_cart() -> Cart {
         Cart {
@@ -249,6 +249,77 @@ mod tests {
         }
         assert!(!runner.is_quitting());
         assert_eq!(runner.runtime.state().frames.get(), 60);
+    }
+
+    /// The top-left cell of the first pixel of `color` below the HUD.
+    fn cell_of(runner: &CartRunner<StubPresenter>, color: u8) -> Option<(i64, i64)> {
+        let framebuffer = runner.runtime.state().framebuffer.borrow();
+        for y in 16..240 {
+            for x in 0..320 {
+                if framebuffer.get(x, y) == Some(color) {
+                    return Some(((x / 8) as i64, ((y - 16) / 8) as i64));
+                }
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn the_snake_example_moves_and_eats() {
+        let source = include_str!("../../examples/snake.r16");
+        let mut runner = CartRunner::from_text("snake.r16", source, StubPresenter::new()).unwrap();
+
+        // Frame 0 draws without moving: head at (20, 14), body behind it.
+        runner.step(0).unwrap();
+        assert_eq!(cell_of(&runner, 9), Some((20, 14)), "head");
+        // Seed 1987 puts the first food at (30, 9): ten cells right, five up.
+        assert_eq!(cell_of(&runner, 8), Some((30, 9)), "first food");
+
+        // Seven frames per cell. Right for ten cells (step 70), turn up on
+        // step 71, then five more cells to reach the food on step 105.
+        for step in 1..=105 {
+            let mask = if step == 71 { Button::Up.bit() } else { 0 };
+            runner.step(mask).unwrap();
+        }
+
+        assert_eq!(
+            cell_of(&runner, 9),
+            Some((30, 9)),
+            "the head reached the food"
+        );
+        assert_ne!(cell_of(&runner, 8), Some((30, 9)), "a new food appeared");
+        assert!(!runner.is_quitting());
+    }
+
+    #[test]
+    fn the_snake_example_dies_at_the_wall_and_restarts_on_z() {
+        let source = include_str!("../../examples/snake.r16");
+        let mut runner = CartRunner::from_text("snake.r16", source, StubPresenter::new()).unwrap();
+
+        // Right from x=20 to the wall at x=40: twenty cells, seven frames each.
+        for _ in 0..150 {
+            runner.step(0).unwrap();
+        }
+        assert_eq!(cell_of(&runner, 9), Some((39, 14)), "stopped at the wall");
+
+        runner.step(Button::Z.bit()).unwrap();
+        assert_eq!(cell_of(&runner, 9), Some((20, 14)), "back at the start");
+        let food = cell_of(&runner, 8).expect("fresh food");
+        assert_ne!(food, (20, 14), "food is never under the head");
+        assert!(!runner.is_quitting());
+    }
+
+    #[test]
+    fn the_snake_example_runs_headless() {
+        let source = include_str!("../../examples/snake.r16");
+        let mut runner = CartRunner::from_text("snake.r16", source, StubPresenter::new()).unwrap();
+        // No input: the snake runs right, hits the wall and waits on the
+        // game-over screen. Nothing may error, and the cart must not quit.
+        for _ in 0..300 {
+            runner.step(Input::new().mask()).unwrap();
+        }
+        assert!(!runner.is_quitting());
+        assert_eq!(runner.runtime.state().frames.get(), 300);
     }
 
     /// A presenter that records the last frame's palette expansion.

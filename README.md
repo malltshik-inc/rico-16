@@ -120,11 +120,12 @@ Working today:
 cargo run -p rico16-cli -- new hello              # writes hello.r16
 cargo run -p rico16-cli -- new hexed --palette rgb332
 cargo run -p rico16-cli -- run examples/hello.r16 # play a cart in a 3× window
+cargo run -p rico16-cli -- run examples/snake.r16 # arrows steer, z restarts
 cargo run -p rico16-cli -- fmt hello.r16          # rewrite in canonical form
 cargo run -p rico16-player -- examples/hello.r16  # same, without the CLI
 ```
 
-In the window: `Esc` closes, `F11` toggles fullscreen, `Ctrl+R` restarts the cart and re-runs `on_init`. Arrows and `Z X C V` map to the eight buttons by physical key position. `system::quit(message)` prints the message and exits 0; a script error prints `<file>:<line>:<col>: <message>` and exits 1. `pack`, `unpack` and `edit` arrive with M4–M5; `examples/hello.r16` is the fixture they will be tested against.
+In the window: `Esc` closes, `F11` toggles fullscreen, `Ctrl+R` restarts the cart and re-runs `on_init`. Arrows and `Z X C V` map to the eight buttons by physical key position. `system::quit(message)` prints the message and exits 0; a script error prints `<file>:<line>:<col>: <message>` and exits 1. `pack`, `unpack` and `edit` arrive with M4–M5; `examples/hello.r16` is the fixture they will be tested against, and `examples/snake.r16` is a complete little game built on the same API.
 
 ## Documentation
 
