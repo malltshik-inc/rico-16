@@ -4,7 +4,7 @@ A 16-bit fantasy console: **320×240**, **256 indexed colors**, **Rhai** scripti
 
 rico-16 is a self-contained console in the spirit of PICO-8, but built for the 16-bit era: a bigger screen, a wider palette, and a scripting language that doesn't make you learn Lua. Everything a cart needs — code, art, map, palette — lives in one file.
 
-> **Status: M2 in progress — carts already run end to end.** `rico16 run cart.r16` loads a cart, compiles it, and runs it at 60 Hz in a 320×240 window. Script errors report file, line and column; `system::quit(message)` prints the message and exits 0. The TUI editor, PNG packing and the sample-cart set are still ahead (see [Roadmap](#roadmap)).
+> **Status: M3 complete — carts run end to end, with sprites and tilemap.** `rico16 run cart.r16` loads a cart, compiles it, and runs it at 60 Hz in a 320×240 window. Script errors report file, line and column; `system::quit(message)` prints the message and exits 0. PNG packing (M4), the TUI editor (M5) and the sample-cart set (M6) are still ahead (see [Roadmap](#roadmap)).
 
 ## The console
 
@@ -88,7 +88,7 @@ rico16-script   Rhai engine, script API bindings, hot reload
 rico16-cart     .r16 text parser/serializer, PNG pack/unpack
 rico16-player   window, input mapping, main loop
 rico16-tui      ratatui editor
-rico16-cli      the `rico16` binary: new / run / pack / unpack / edit
+rico16-cli      the `rico16` binary: new / fmt / run (pack, unpack, edit planned)
 docs/           SPEC.md and friends
 ```
 
@@ -99,7 +99,7 @@ docs/           SPEC.md and friends
 | M0 | Workspace skeleton, `rico16 new`, cart parser with round-trip tests — **done** |
 | M1 | Core framebuffer + drawing ops, player window, input, 60 Hz loop — **done** |
 | M2 | Rhai embedded, script API, cart loading, error reporting with line numbers — **done** |
-| M3 | Sprites and tilemap: `sprite`, `tilemap`, scrolling via explicit coordinates |
+| M3 | Sprites and tilemap: `sprite`, `tilemap`, scrolling via explicit coordinates — **done** |
 | M4 | Cart format finalized, PNG pack/unpack, thumbnails, CLI `pack`/`unpack` |
 | M5 | TUI editor: edit, run/stop, console, hot reload, palette |
 | M6 | Limit enforcement, docs, sample carts |
