@@ -1,0 +1,9 @@
+[package]
+name = "rico16-core"
+description = "Fixed resources and data model of the rico-16 fantasy console"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror.workspace = true

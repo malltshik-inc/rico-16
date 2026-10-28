@@ -1,0 +1,14 @@
+[package]
+name = "rico16-player"
+description = "Window, input mapping and main loop of the rico-16 fantasy console"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rico16-cart.workspace = true
+rico16-core.workspace = true
+rico16-script.workspace = true
+thiserror.workspace = true
+winit.workspace = true
+pixels.workspace = true
