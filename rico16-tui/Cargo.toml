@@ -1,9 +1,0 @@
-[package]
-name = "rico16-tui"
-description = "Terminal editor for rico-16 carts"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-
-[dependencies]
-rico16-cart.workspace = true

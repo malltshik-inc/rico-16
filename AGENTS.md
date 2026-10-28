@@ -15,9 +15,9 @@ Guidance for anyone — human or AI agent — changing this repository. Read thi
 | Path | Owns | Must not |
 |---|---|---|
 | `rico16-core` | Framebuffer, palette, blitting, tilemap data, input state, RNG, constants from SPEC §7 | Touch the filesystem, clock, threads, environment, OS RNG, or any windowing crate |
-| `rico16-script` | Rhai engine, module registration, hot reload | Contain rendering logic or resource constants |
-| `rico16-cart` | `.r16` parse/serialize, binary encoding, PNG pack/unpack | Know about Rhai execution or windows |
-| `rico16-player` | Window, present path, key mapping, main loop | Define behaviour the spec does not describe |
+| `rico16-script` | Rhai engine, module registration, module resolver, hot reload | Contain rendering logic or resource constants |
+| `rico16-cart` | `cart.toml` parse/serialize, binary encoding, PNG pack/unpack | Know about Rhai execution or windows |
+| `rico16-player` | Window, present path, key mapping, main loop, frame pacing | Define behaviour the spec does not describe |
 | `rico16-tui` | ratatui editor | Duplicate cart parsing |
 | `rico16-cli` | `rico16` binary and subcommand wiring | Hold logic that belongs in a library crate |
 | `docs/` | SPEC.md and supporting documents | Contradict SPEC.md |
@@ -26,7 +26,7 @@ Dependency direction is strictly downward: `cli` → {`tui`, `player`, `cart`, `
 
 ## Hard guardrails
 
-These are settled design decisions (see SPEC §17). Do not revisit them in a PR; propose a spec change instead.
+These are settled design decisions (see SPEC §18). Do not revisit them in a PR; propose a spec change instead.
 
 - **No true color.** Indexed 8-bit only. No RGBA drawing API, no alpha blending.
 - **No transparency except index 0 as a blit key** (SPEC §4.2). Primitives write their color literally.
@@ -56,15 +56,16 @@ Never expose a function that is not in the spec table. Never rename one without 
 ## Changing the cart format
 
 - Every format change needs: SPEC update, changelog entry, and a fixture.
-- `parse → serialize` must be byte-identical for canonical carts (SPEC §10.7). Keep that test green; it is the cheapest defence against silent corruption.
+- `parse → serialize` must be byte-identical for canonical carts (SPEC §10.2). Keep that test green; it is the cheapest defence against silent corruption.
 - Read permissively (CRLF, BOM, either section order), write canonically.
 - Unknown sections and unknown metadata keys must survive a round-trip. If a change breaks that, it is wrong.
 
 ## Testing rules
 
 - Pixel-exact tests for every drawing primitive, including clipping at all four edges and fully off-screen draws.
-- Round-trip tests for `.r16` and for pack/unpack.
+- Round-trip tests for `cart.toml` and for pack/unpack.
 - A determinism test: run a fixed cart for N frames twice, hash the framebuffer, compare.
+- Conformance vector tests: RNG (§21.1), line (§21.2), circle (§21.3), rgb332 (§21.4), palette anchors (§21.5), CRC (§21.6), dt (§21.7), quantizers (§21.8).
 - Fuzz-ish edge cases that must never panic: negative coordinates, `w`/`h` ≤ 0, values at 255, map access at the bounds, empty code section, cart with no entry points.
 - No test may depend on wall-clock time, RNG entropy, or the order of directory entries.
 
@@ -92,6 +93,7 @@ Ask before adding a crate. The approved set is deliberately small and each one h
 | `crc32fast` | cart | blob checksum |
 | `thiserror` | all libraries | error types |
 | `clap` | cli | argument parsing |
+| `toml` | cart | cart.toml parsing |
 
 Rules: no `anyhow` in library crates (typed errors); no duplicate-purpose crates; no `unsafe` without a written justification in the PR and a comment on the block; keep `player`-only and `tui`-only crates out of `core`.
 
