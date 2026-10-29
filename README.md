@@ -113,7 +113,28 @@ The trade is stated plainly: cover art is 12-bit colour, and a cart PNG must nev
 
 ## Editor
 
-`rico16 edit <project>` opens a [ratatui](https://github.com/ratatui/ratatui) terminal UI with a project tree, a code editor with Rhai highlighting, a console pane for errors and prints, a palette inspector, and run/stop with hot reload. The game itself opens in its own window — a terminal cannot do justice to a 320×240 indexed framebuffer.
+`rico16 edit <project>` opens a [ratatui](https://github.com/ratatui/ratatui) terminal UI with a project tree, a code editor with Rhai highlighting, a console pane for errors and prints, a palette inspector, and run/stop with hot reload.
+
+The running cart can be shown two ways:
+
+- **`F5` — embedded preview** inside the editor. A 320×240 framebuffer cannot be shown faithfully in a terminal, so this is a downsampled, palette-quantized half-block view: handy while editing, not the display of record.
+- **`F8` — its own native window.** Real pixels, integer scaling, the real thing.
+
+Both drive the same runtime with the same fixed timestep, so a cart behaves identically either way (SPEC §16.4).
+
+The footer always shows the keys, and `F1` opens the full list:
+
+| Key | Action |
+|---|---|
+| `F1` / `?` | help |
+| `F5` | build and run in the embedded preview |
+| `F6` | stop |
+| `F7` | restart |
+| `F8` | run in its own native window |
+| `Ctrl+S` | save (hot-reloads a running cart) |
+| `Tab` | move focus between tree, editor and game |
+| `Esc` | leave the game pane |
+| `Ctrl+Q` | quit |
 
 Pixel-art tools are intentionally *not* in the first milestone. Carts are text, so any editor works until the built-in ones land.
 

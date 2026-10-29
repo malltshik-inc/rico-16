@@ -1897,6 +1897,7 @@ dependencies = [
  "ratatui",
  "rico16-cart",
  "rico16-core",
+ "rico16-script",
  "thiserror 2.0.21",
 ]
 

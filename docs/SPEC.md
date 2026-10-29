@@ -1230,9 +1230,22 @@ The editor is a ratatui terminal application (crossterm backend). It is a separa
 - **Build-on-run**: `rico16 run` semantics from the editor
 - **Rebuild on save**: when a `.rhai` or asset file is saved, rebuild in background; hot reload the running cart by resetting it (re-run `on_init`; nothing is preserved, per [§14.9](#149-quit-and-reset))
 
-### 16.4. Game window
+### 16.4. Game view
 
-The game runs in its own native window, not inside the terminal. The terminal multiplexes nothing; it only edits and shows text.
+The game runs in its own native window. A 320×240 indexed framebuffer needs
+real pixels, and a terminal cannot show it faithfully; the terminal multiplexes
+nothing and only edits and shows text. That window is the **display of record**.
+
+The editor MAY additionally show a live **embedded preview** of the running cart
+in a terminal pane, for convenience while editing. The preview is a
+best-effort, downsampled, palette-quantized view; its size, resolution and
+colour fidelity are implementation-defined and it is not the display of record.
+A cart MUST behave identically whether it is previewed in the terminal or run in
+a window: the preview MUST drive the same runtime with the same fixed timestep
+and the same input, and MUST NOT change what the cart observes.
+
+An editor that offers both MUST make it obvious which one is running, and MUST
+make the way to run, stop and get help visible without documentation.
 
 ### 16.5. Save behavior
 
@@ -1496,5 +1509,7 @@ This section records the choices made for the reference implementation. It is **
 ## 22. Changelog
 
 - **1.0 (draft), correction** — §6.5: the font bitmap is **bit 0 = leftmost pixel**. The normative bytes are, and always were, the LSB-first public-domain 8×8 font; the prose previously said "bit 7 = leftmost", which renders every glyph mirrored. The bytes are unchanged; only the description was wrong. Implementations that followed the prose literally must flip the bit order.
+
+- **1.0 (draft), amendment** — §16.4: the native window is named the display of record, and the editor may now show an embedded terminal preview. The preview is explicitly best-effort and must not change what a cart observes. The editor is required to make run/stop/help discoverable on screen.
 
 - **1.0 (draft)** — Initial specification. Project-based development (`cart.toml`, `src/`, `assets/`). Real Rhai module imports with embedded sources. Standard modules importable and ambient. PNG v1: 640×480 default, 1280×960 overflow (~378 KB / ~1.76 MB code capacity). RGB-only payload (12 bpp), A=0xFF. No code limit. Explicit asset placement in `cart.toml`. Commands: `new`, `build`, `run`, `unpack`. Scene pattern: only the entry point has `on_init`/`on_update`/`on_draw`; global state via a single reserved `state` variable. System menu on `Esc`. Frame pacing for high-refresh displays. Complete RNG spec (xoshiro256**, SplitMix64 streaming, Lemire rejection, Fisher-Yates). Exact drawing algorithms (Bresenham DDA, integer disk, ink-only text). Default palette and font bytes in the spec. Conformance vectors included. Build determinism is defined for the cart payload, not the PNG file bytes. Reference implementation choices (Rust, `winit` + software framebuffer, pinned Rhai, Windows/macOS/Linux) are recorded in [§21](#21-reference-implementation-informative).

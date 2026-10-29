@@ -7,10 +7,11 @@
 
 mod app;
 pub mod buffer;
+pub mod game;
 pub mod highlight;
 pub mod tree;
 
-pub use app::{EditorOptions, project_root, run};
+pub use app::{EditorOptions, HELP, HOTKEYS, project_root, run};
 
 /// Anything the editor can fail with.
 #[derive(Debug, thiserror::Error)]

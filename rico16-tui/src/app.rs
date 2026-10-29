@@ -7,7 +7,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -16,23 +16,63 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap};
 use ratatui::{Frame, Terminal};
 
 use rico16_core::palette::{Palette, expand5};
 
 use crate::TuiError;
 use crate::buffer::TextBuffer;
+use crate::game::{self, EmbeddedGame, Tick};
 use crate::highlight::{Token, highlight};
 use crate::tree::{Entry, project_files};
+
+/// The keys shown in the footer, so the editor says how to drive it.
+pub const HOTKEYS: &[(&str, &str)] = &[
+    ("F1", "help"),
+    ("F5", "run"),
+    ("F6", "stop"),
+    ("F7", "restart"),
+    ("F8", "window"),
+    ("^S", "save"),
+    ("Tab", "pane"),
+    ("^Q", "quit"),
+];
+
+/// The full key list shown by the help modal.
+pub const HELP: &[(&str, &str)] = &[
+    ("F1 or ?", "show or hide this help"),
+    ("F5", "build and run the cart in the embedded preview"),
+    ("F6", "stop the running cart"),
+    ("F7", "restart the running cart"),
+    ("F8", "run the cart in its own native window"),
+    (
+        "Ctrl+S",
+        "save the current file; hot-reloads a running cart",
+    ),
+    ("Tab", "move focus between the tree, editor and game panes"),
+    ("Esc", "leave the game pane, or close this help"),
+    ("Ctrl+Q", "quit the editor"),
+    (
+        "Up / Down",
+        "move in the file tree, or the cursor in the editor",
+    ),
+    ("Left / Right", "move the cursor"),
+    ("Home / End", "start or end of line"),
+    ("Enter", "open the selected file, or start a new line"),
+    ("Backspace", "delete before the cursor"),
+    (
+        "Arrows, Z X C V",
+        "play the cart while the game pane is focused",
+    ),
+];
 
 /// How to start the editor.
 #[derive(Debug, Clone)]
 pub struct EditorOptions {
     /// The project root.
     pub project: PathBuf,
-    /// The `rico16` binary to spawn for Run (SPEC §16.4: the game gets its own
-    /// window, so it runs as a child process).
+    /// The `rico16` binary to spawn for the windowed run.
     pub program: PathBuf,
 }
 
@@ -40,6 +80,7 @@ pub struct EditorOptions {
 enum Focus {
     Tree,
     Editor,
+    Game,
 }
 
 struct Editor {
@@ -51,6 +92,8 @@ struct Editor {
     focus: Focus,
     console: Vec<String>,
     child: Option<Child>,
+    game: Option<EmbeddedGame>,
+    help: bool,
     output: Receiver<String>,
     sender: Sender<String>,
     palette: Palette,
@@ -69,6 +112,8 @@ impl Editor {
             focus: Focus::Editor,
             console: Vec::new(),
             child: None,
+            game: None,
+            help: false,
             output,
             sender,
             palette: Palette::new(),
@@ -125,7 +170,9 @@ impl Editor {
 
     /// SPEC §16.3, §16.5 — save, then hot-reload by restarting the cart.
     fn save(&mut self) {
-        let was_running = self.child.is_some();
+        let running_embedded = self.game.is_some();
+        let running_window = self.child.is_some();
+
         match self.buffer.save() {
             Ok(()) => {
                 self.log(format!(
@@ -137,18 +184,33 @@ impl Editor {
                 ));
                 self.reload_palette();
                 self.refresh_files();
-                if was_running {
-                    // SPEC §16.3 — rebuild and hot reload by resetting the cart.
-                    self.restart_cart();
+                if running_embedded {
+                    self.run_embedded();
+                } else if running_window {
+                    self.run_windowed();
                 }
             }
             Err(e) => self.log(format!("save failed: {e}")),
         }
     }
 
-    /// SPEC §16.3 — build-on-run: `rico16 run` semantics from the editor.
-    fn run_cart(&mut self) {
+    /// SPEC §16.3, §16.4 — build and run inside the editor.
+    fn run_embedded(&mut self) {
         self.stop_cart();
+        match EmbeddedGame::start(&self.project) {
+            Ok(game) => {
+                self.game = Some(game);
+                self.focus = Focus::Game;
+                self.log("running in the embedded preview");
+            }
+            Err(e) => self.log(format!("build failed: {e}")),
+        }
+    }
+
+    /// SPEC §16.3, §16.4 — run in the cart's own native window.
+    fn run_windowed(&mut self) {
+        self.stop_cart();
+        self.game = None;
         let mut command = Command::new(&self.program);
         command
             .arg("run")
@@ -164,7 +226,7 @@ impl Editor {
                     forward(stderr, self.sender.clone());
                 }
                 self.child = Some(child);
-                self.log("running");
+                self.log("running in a window");
             }
             Err(e) => self.log(format!("cannot run: {e}")),
         }
@@ -174,12 +236,77 @@ impl Editor {
         if let Some(mut child) = self.child.take() {
             let _ = child.kill();
             let _ = child.wait();
-            self.log("stopped");
+            self.log("stopped the window");
         }
     }
 
-    fn restart_cart(&mut self) {
-        self.run_cart();
+    fn stop_game(&mut self) {
+        if self.game.take().is_some() {
+            self.log("stopped the preview");
+        }
+        self.stop_cart();
+        if self.focus == Focus::Game {
+            self.focus = Focus::Editor;
+        }
+    }
+
+    fn restart_game(&mut self) {
+        if self.game.is_some() {
+            self.run_embedded();
+        } else if self.child.is_some() {
+            self.run_windowed();
+        } else {
+            self.run_embedded();
+        }
+    }
+
+    /// SPEC §16.4 — advance the embedded cart and collect what it printed.
+    fn tick_game(&mut self) {
+        let (tick, output) = {
+            let Some(game) = self.game.as_mut() else {
+                return;
+            };
+            (game.tick(), game.take_output())
+        };
+
+        let mut lines = output;
+        let mut stop = false;
+        match tick {
+            Tick::Running => {}
+            Tick::Quit(message) => {
+                if let Some(message) = message {
+                    lines.push(message);
+                }
+                lines.push("the cart quit".to_string());
+                stop = true;
+            }
+            Tick::Error(error) => {
+                lines.push(error);
+                stop = true;
+            }
+        }
+
+        for line in lines {
+            self.log(line);
+        }
+        if stop {
+            self.game = None;
+            self.focus = Focus::Editor;
+        }
+    }
+
+    fn cycle_focus(&mut self) {
+        self.focus = match self.focus {
+            Focus::Tree => Focus::Editor,
+            Focus::Editor => {
+                if self.game.is_some() {
+                    Focus::Game
+                } else {
+                    Focus::Tree
+                }
+            }
+            Focus::Game => Focus::Tree,
+        };
     }
 
     fn log(&mut self, line: impl Into<String>) {
@@ -192,18 +319,80 @@ impl Editor {
 
     fn handle_key(&mut self, key: KeyEvent) {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-        match key.code {
-            KeyCode::Char('q') if ctrl => self.should_quit = true,
-            KeyCode::Char('s') if ctrl => self.save(),
-            KeyCode::F(5) => self.run_cart(),
-            KeyCode::F(6) => self.stop_cart(),
-            KeyCode::F(7) => self.restart_cart(),
-            KeyCode::Tab => {
-                self.focus = match self.focus {
-                    Focus::Tree => Focus::Editor,
-                    Focus::Editor => Focus::Tree,
-                };
+        let pressed = key.kind != KeyEventKind::Release;
+
+        if self.help {
+            if matches!(
+                key.code,
+                KeyCode::Esc | KeyCode::F(1) | KeyCode::Char('?') | KeyCode::Enter
+            ) {
+                self.help = false;
             }
+            return;
+        }
+
+        if pressed {
+            match key.code {
+                KeyCode::F(1) => {
+                    self.help = true;
+                    return;
+                }
+                KeyCode::Char('?') => {
+                    self.help = true;
+                    return;
+                }
+                KeyCode::Char('q') if ctrl => {
+                    self.should_quit = true;
+                    return;
+                }
+                KeyCode::Char('s') if ctrl => {
+                    self.save();
+                    return;
+                }
+                KeyCode::F(5) => {
+                    self.run_embedded();
+                    return;
+                }
+                KeyCode::F(6) => {
+                    self.stop_game();
+                    return;
+                }
+                KeyCode::F(7) => {
+                    self.restart_game();
+                    return;
+                }
+                KeyCode::F(8) => {
+                    self.run_windowed();
+                    return;
+                }
+                KeyCode::Tab => {
+                    self.cycle_focus();
+                    return;
+                }
+                KeyCode::Esc => {
+                    if self.focus == Focus::Game {
+                        self.focus = Focus::Editor;
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        // SPEC §16.4 — while the game pane is focused the cart owns the keys.
+        if self.focus == Focus::Game {
+            if let (Some(game), Some(button)) = (self.game.as_mut(), game::button_for_key(key.code))
+            {
+                game.set_button(button, pressed);
+            }
+            return;
+        }
+
+        if !pressed {
+            return;
+        }
+
+        match key.code {
             KeyCode::Char(ch) if !ctrl && self.focus == Focus::Editor => {
                 self.buffer.insert_char(ch)
             }
@@ -215,10 +404,8 @@ impl Editor {
             KeyCode::Home => self.buffer.move_home(),
             KeyCode::End => self.buffer.move_end(),
             KeyCode::Up => match self.focus {
-                Focus::Tree => {
-                    self.selected = self.selected.saturating_sub(1);
-                }
-                Focus::Editor => self.buffer.move_up(),
+                Focus::Tree => self.selected = self.selected.saturating_sub(1),
+                _ => self.buffer.move_up(),
             },
             KeyCode::Down => match self.focus {
                 Focus::Tree => {
@@ -226,7 +413,7 @@ impl Editor {
                         self.selected += 1;
                     }
                 }
-                Focus::Editor => self.buffer.move_down(),
+                _ => self.buffer.move_down(),
             },
             KeyCode::Enter => self.open_selected(),
             _ => {}
@@ -234,23 +421,42 @@ impl Editor {
     }
 
     fn draw(&self, frame: &mut Frame) {
-        let vertical = Layout::default()
+        let area = frame.area();
+        let game_rows = if self.game.is_some() {
+            (area.height / 3).clamp(12, 40)
+        } else {
+            0
+        };
+        let rows = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(3), Constraint::Length(8)])
-            .split(frame.area());
-        let horizontal = Layout::default()
+            .constraints([
+                Constraint::Min(3),
+                Constraint::Length(game_rows),
+                Constraint::Length(8),
+                Constraint::Length(1),
+            ])
+            .split(area);
+
+        let columns = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
                 Constraint::Length(30),
                 Constraint::Min(20),
                 Constraint::Length(34),
             ])
-            .split(vertical[0]);
+            .split(rows[0]);
 
-        self.draw_tree(frame, horizontal[0]);
-        self.draw_editor(frame, horizontal[1]);
-        self.draw_palette(frame, horizontal[2]);
-        self.draw_console(frame, vertical[1]);
+        self.draw_tree(frame, columns[0]);
+        self.draw_editor(frame, columns[1]);
+        self.draw_palette(frame, columns[2]);
+        if let Some(game) = &self.game {
+            self.draw_game(frame, rows[1], game);
+        }
+        self.draw_console(frame, rows[2]);
+        self.draw_footer(frame, rows[3]);
+        if self.help {
+            self.draw_help(frame, area);
+        }
     }
 
     fn draw_tree(&self, frame: &mut Frame, area: Rect) {
@@ -311,6 +517,16 @@ impl Editor {
         }
     }
 
+    fn draw_game(&self, frame: &mut Frame, area: Rect, game: &EmbeddedGame) {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" game (preview) ")
+            .border_style(self.focus_style(Focus::Game));
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        game::render_frame(game.rgba(), inner, frame.buffer_mut());
+    }
+
     fn draw_palette(&self, frame: &mut Frame, area: Rect) {
         let block = Block::default().borders(Borders::ALL).title(" palette ");
         let inner = block.inner(area);
@@ -346,6 +562,64 @@ impl Editor {
         frame.render_widget(Paragraph::new(lines), inner);
     }
 
+    fn draw_footer(&self, frame: &mut Frame, area: Rect) {
+        let (state, state_bg) = if self.game.is_some() {
+            ("running", Color::Green)
+        } else if self.child.is_some() {
+            ("window", Color::Cyan)
+        } else {
+            ("stopped", Color::DarkGray)
+        };
+
+        let mut spans = vec![Span::styled(
+            format!(" {state} "),
+            Style::default().fg(Color::Black).bg(state_bg),
+        )];
+        for (key, what) in HOTKEYS {
+            spans.push(Span::styled(
+                format!(" {key}"),
+                Style::default().fg(Color::Yellow),
+            ));
+            spans.push(Span::styled(
+                format!(" {what} "),
+                Style::default().fg(Color::Gray),
+            ));
+        }
+        frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    }
+
+    fn draw_help(&self, frame: &mut Frame, area: Rect) {
+        let width = 64.min(area.width);
+        let height = (HELP.len() as u16 + 2).min(area.height);
+        let popup = Rect::new(
+            area.x + (area.width.saturating_sub(width)) / 2,
+            area.y + (area.height.saturating_sub(height)) / 2,
+            width,
+            height,
+        );
+        frame.render_widget(Clear, popup);
+
+        let lines: Vec<Line> = HELP
+            .iter()
+            .map(|(key, what)| {
+                Line::from(vec![
+                    Span::styled(format!("  {key:<15}"), Style::default().fg(Color::Yellow)),
+                    Span::raw(what.to_string()),
+                ])
+            })
+            .collect();
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" keys — F1 or Esc to close ");
+        frame.render_widget(
+            Paragraph::new(lines)
+                .block(block)
+                .style(Style::default().bg(Color::Black))
+                .wrap(Wrap { trim: false }),
+            popup,
+        );
+    }
+
     fn focus_style(&self, focus: Focus) -> Style {
         if self.focus == focus {
             Style::default().fg(Color::Yellow)
@@ -369,7 +643,7 @@ pub fn run(options: EditorOptions) -> Result<(), TuiError> {
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
-    editor.stop_cart();
+    editor.stop_game();
     result
 }
 
@@ -378,13 +652,21 @@ fn event_loop(
     editor: &mut Editor,
 ) -> Result<(), TuiError> {
     while !editor.should_quit {
+        editor.tick_game();
         while let Ok(line) = editor.output.try_recv() {
             editor.log(line);
         }
+
         terminal.draw(|frame| editor.draw(frame))?;
-        if event::poll(Duration::from_millis(50))?
+
+        // SPEC §14.2 — a running preview needs to be pumped near 60 Hz.
+        let timeout = if editor.game.is_some() {
+            Duration::from_millis(8)
+        } else {
+            Duration::from_millis(50)
+        };
+        if event::poll(timeout)?
             && let Event::Key(key) = event::read()?
-            && key.kind != crossterm::event::KeyEventKind::Release
         {
             editor.handle_key(key);
         }

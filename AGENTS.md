@@ -18,7 +18,7 @@ Guidance for anyone — human or AI agent — changing this repository. Read thi
 | `rico16-script` | Rhai engine, module registration, module resolver, hot reload | Contain rendering logic or resource constants |
 | `rico16-cart` | `cart.toml` parse/serialize, binary encoding, PNG pack/unpack | Know about Rhai execution or windows |
 | `rico16-player` | Window, present path, key mapping, main loop, frame pacing | Define behaviour the spec does not describe |
-| `rico16-tui` | ratatui editor | Duplicate cart parsing |
+| `rico16-tui` | ratatui editor, embedded game preview | Duplicate cart parsing, own the display of record |
 | `rico16-cli` | `rico16` binary and subcommand wiring | Hold logic that belongs in a library crate |
 | `docs/` | SPEC.md and supporting documents | Contradict SPEC.md |
 

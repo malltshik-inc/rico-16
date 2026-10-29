@@ -163,3 +163,96 @@ fn buffer_keeps_edits() {
     assert_eq!(buffer.to_text(), "ba");
     assert_eq!(buffer.line(0), "ba");
 }
+
+/// SPEC §16.4 — the footer advertises how to run and how to get help.
+#[test]
+fn footer_advertises_the_keys() {
+    let keys: Vec<&str> = rico16_tui::HOTKEYS.iter().map(|(k, _)| *k).collect();
+    for key in ["F1", "F5", "F6", "F7", "F8", "Tab"] {
+        assert!(keys.contains(&key), "the footer must mention {key}");
+    }
+    let help: Vec<&str> = rico16_tui::HELP.iter().map(|(k, _)| *k).collect();
+    assert!(
+        help.iter().any(|k| k.contains("F1")),
+        "the help must say how to open it"
+    );
+}
+
+/// SPEC §16.4 — terminal keys map to the cart's buttons.
+#[test]
+fn embedded_key_map() {
+    use crossterm::event::KeyCode;
+    use rico16_core::input::Button;
+    use rico16_tui::game::button_for_key;
+
+    assert_eq!(button_for_key(KeyCode::Left), Some(Button::Left));
+    assert_eq!(button_for_key(KeyCode::Right), Some(Button::Right));
+    assert_eq!(button_for_key(KeyCode::Up), Some(Button::Up));
+    assert_eq!(button_for_key(KeyCode::Down), Some(Button::Down));
+    assert_eq!(button_for_key(KeyCode::Char('z')), Some(Button::Z));
+    assert_eq!(button_for_key(KeyCode::Char('X')), Some(Button::X));
+    assert_eq!(button_for_key(KeyCode::Char('c')), Some(Button::C));
+    assert_eq!(button_for_key(KeyCode::Char('v')), Some(Button::V));
+    assert_eq!(button_for_key(KeyCode::Char('a')), None);
+}
+
+/// SPEC §16.4 — the preview draws one cell per two source pixels, upper half
+/// in the foreground and lower half in the background.
+#[test]
+fn embedded_renderer_uses_half_blocks() {
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    use ratatui::style::Color;
+    use rico16_core::limits::{FRAMEBUFFER_LEN, SCREEN_HEIGHT, SCREEN_WIDTH};
+    use rico16_tui::game::render_frame;
+
+    let mut rgba = vec![0u8; FRAMEBUFFER_LEN * 4];
+    rgba[0..4].copy_from_slice(&[255, 0, 0, 255]); // pixel (0, 0)
+    let second = (SCREEN_WIDTH) * 4; // pixel (0, 1)
+    rgba[second..second + 4].copy_from_slice(&[0, 0, 255, 255]);
+
+    // A 320x120 cell area is exactly 1:1 with the 320x240 framebuffer.
+    let area = Rect::new(0, 0, SCREEN_WIDTH as u16, (SCREEN_HEIGHT / 2) as u16);
+    let mut buf = Buffer::empty(area);
+    render_frame(&rgba, area, &mut buf);
+
+    let cell = buf.cell((0, 0)).unwrap();
+    assert_eq!(cell.symbol(), "\u{2580}");
+    assert_eq!(cell.fg, Color::Rgb(255, 0, 0));
+    assert_eq!(cell.bg, Color::Rgb(0, 0, 255));
+}
+
+/// SPEC §16.4 — the embedded preview runs real carts, headless.
+#[test]
+fn embedded_game_runs_examples() {
+    use rico16_tui::game::{EmbeddedGame, Tick};
+    use std::path::Path;
+
+    let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples");
+    let mut found = 0;
+    for entry in std::fs::read_dir(&examples).expect("examples directory") {
+        let dir = entry.unwrap().path();
+        if !dir.join("cart.toml").is_file() {
+            continue;
+        }
+        found += 1;
+        let mut game =
+            EmbeddedGame::start(&dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
+        for frame in 0..180 {
+            match game.step_frame() {
+                Tick::Running => {}
+                Tick::Quit(_) => break,
+                Tick::Error(e) => panic!("{} frame {frame}: {e}", dir.display()),
+            }
+        }
+        assert!(
+            game.rgba().iter().any(|&b| b != 0),
+            "{} drew nothing",
+            dir.display()
+        );
+    }
+    assert!(
+        found >= 2,
+        "expected at least two example carts, found {found}"
+    );
+}
