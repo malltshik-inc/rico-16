@@ -1,0 +1,17 @@
+[package]
+name = "rico16-cli"
+description = "the `rico16` binary: new, build, run, unpack, edit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rico16-core.workspace = true
+rico16-cart.workspace = true
+rico16-player.workspace = true
+clap.workspace = true
+thiserror.workspace = true
+
+[[bin]]
+name = "rico16"
+path = "src/main.rs"

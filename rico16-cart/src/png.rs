@@ -286,6 +286,38 @@ pub fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>, CartE
     Ok(out)
 }
 
+/// SPEC §15.4 — encode an 8-bit indexed PNG with an explicit RGB palette.
+pub fn encode_indexed_png(
+    width: u32,
+    height: u32,
+    palette_rgb8: &[u8],
+    indices: &[u8],
+) -> Result<Vec<u8>, CartError> {
+    let mut out = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(Cursor::new(&mut out), width, height);
+        encoder.set_color(png::ColorType::Indexed);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.set_palette(palette_rgb8.to_vec());
+        let mut writer = encoder.write_header().map_err(png_encode_err)?;
+        writer.write_image_data(indices).map_err(png_encode_err)?;
+    }
+    Ok(out)
+}
+
+/// SPEC §15.4 — encode an 8-bit grayscale PNG.
+pub fn encode_gray_png(width: u32, height: u32, samples: &[u8]) -> Result<Vec<u8>, CartError> {
+    let mut out = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(Cursor::new(&mut out), width, height);
+        encoder.set_color(png::ColorType::Grayscale);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().map_err(png_encode_err)?;
+        writer.write_image_data(samples).map_err(png_encode_err)?;
+    }
+    Ok(out)
+}
+
 /// SPEC §13.4 — decode a cart PNG, which must be 8-bit RGBA and non-interlaced.
 pub fn decode_png_rgba8_strict(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), CartError> {
     let decoder = png::Decoder::new(Cursor::new(bytes));
@@ -319,15 +351,16 @@ pub fn decode_png_rgba8(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), CartError> 
     let mut decoder = png::Decoder::new(Cursor::new(bytes));
     decoder.set_transformations(png::Transformations::normalize_to_color8());
     let mut reader = decoder.read_info().map_err(|e| png_err("<png>", e))?;
-    let info = reader.info().clone();
     let mut buf = vec![0u8; reader.output_buffer_size()];
     let frame = reader
         .next_frame(&mut buf)
         .map_err(|e| png_err("<png>", e))?;
     buf.truncate(frame.buffer_size());
 
-    let pixels = (info.width as usize) * (info.height as usize);
-    let rgba = match info.color_type {
+    // Use the *output* colour type: the transformations above may have expanded
+    // an indexed or low-bit-depth image before we see it.
+    let pixels = (frame.width as usize) * (frame.height as usize);
+    let rgba = match frame.color_type {
         png::ColorType::Rgba => buf,
         png::ColorType::Rgb => {
             let mut out = Vec::with_capacity(pixels * 4);
@@ -351,8 +384,8 @@ pub fn decode_png_rgba8(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), CartError> 
             out
         }
         png::ColorType::Indexed => {
-            let palette = info.palette.clone().unwrap_or_default();
-            let trns = info.trns.clone().unwrap_or_default();
+            let palette = reader.info().palette.clone().unwrap_or_default();
+            let trns = reader.info().trns.clone().unwrap_or_default();
             let mut out = Vec::with_capacity(pixels * 4);
             for &idx in &buf {
                 let i = idx as usize * 3;
@@ -367,7 +400,7 @@ pub fn decode_png_rgba8(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), CartError> 
             out
         }
     };
-    Ok((info.width, info.height, rgba))
+    Ok((frame.width, frame.height, rgba))
 }
 
 /// SPEC §10.2.3 — decode a 128×128 map PNG to tile ids.
@@ -379,20 +412,20 @@ pub fn map_tile_ids(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), CartError> {
     let mut decoder = png::Decoder::new(Cursor::new(bytes));
     decoder.set_transformations(png::Transformations::STRIP_16);
     let mut reader = decoder.read_info().map_err(|e| png_err("<map png>", e))?;
-    let info = reader.info().clone();
-    if info.bit_depth != png::BitDepth::Eight {
-        return Err(CartError::Asset(format!(
-            "map png must be 8-bit, found {:?}",
-            info.bit_depth
-        )));
-    }
     let mut buf = vec![0u8; reader.output_buffer_size()];
     let frame = reader
         .next_frame(&mut buf)
         .map_err(|e| png_err("<map png>", e))?;
     buf.truncate(frame.buffer_size());
 
-    let ids = match info.color_type {
+    if frame.bit_depth != png::BitDepth::Eight {
+        return Err(CartError::Asset(format!(
+            "map png must be 8-bit, found {:?}",
+            frame.bit_depth
+        )));
+    }
+
+    let ids = match frame.color_type {
         png::ColorType::Grayscale | png::ColorType::Indexed => buf,
         png::ColorType::Rgb => buf
             .chunks_exact(3)
@@ -404,7 +437,7 @@ pub fn map_tile_ids(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), CartError> {
             .collect(),
         png::ColorType::GrayscaleAlpha => buf.chunks_exact(2).map(|px| px[0]).collect(),
     };
-    Ok((info.width, info.height, ids))
+    Ok((frame.width, frame.height, ids))
 }
 
 fn bt601(r: u8, g: u8, b: u8) -> u8 {

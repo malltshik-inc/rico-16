@@ -12,6 +12,7 @@ pub mod crc;
 pub mod error;
 pub mod manifest;
 pub mod png;
+pub mod unpack;
 
 pub use binary::{BinaryCart, FORMAT_VERSION, MAGIC, Module, metadata_from_manifest};
 pub use build::{BuildOptions, BuildOutput, assemble_project, build_project};
@@ -19,3 +20,4 @@ pub use crc::crc32;
 pub use error::CartError;
 pub use manifest::{CartMeta, CartToml, DEFAULT_ENTRY, FORMAT_V1, SpritePlacement};
 pub use png::{Art, BLOB_MAGIC, BLOB_VERSION, Variant};
+pub use unpack::{ProjectFile, ProjectFiles, project_from_cart, unpack_project};
