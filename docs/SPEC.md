@@ -1,6 +1,6 @@
 # rico-16 Specification
 
-**Version:** 3.0 (draft)
+**Version:** 1.0 (draft)
 **Status:** normative. If code and this document disagree, the code is wrong unless a changelog entry below says otherwise.
 
 ---
@@ -26,8 +26,9 @@
 17. [Versioning and compatibility](#17-versioning-and-compatibility)
 18. [Deferred features and non-goals](#18-deferred-features-and-non-goals)
 19. [Decision log](#19-decision-log)
-20. [Changelog](#20-changelog)
-21. [Conformance vectors](#21-conformance-vectors)
+20. [Conformance vectors](#20-conformance-vectors)
+21. [Reference implementation (informative)](#21-reference-implementation-informative)
+22. [Changelog](#22-changelog)
 
 ---
 
@@ -79,13 +80,13 @@ PU (pixel units) are integer screen pixels. RGB555 words are 16-bit little-endia
 
 4.1. The palette has **256 entries**. Each entry is an **RGB555** word: bits 0–4 red, bits 5–9 green, bits 10–14 blue, bit 15 reserved and MUST be 0. Component values are 0–31. Total palette size is **512 bytes**.
 
-4.2. **Index 0 is the transparency key** for all blitting operations (sprite and tilemap draws). It is not transparent on the display: after expansion, index 0 shows `palette[0]`. The default palette MUST have `palette[0]` = opaque black.
+4.2. **Palette index 0 is the transparency key** for all blitting operations (sprite and tilemap draws): a source pixel whose palette index is 0 is not written. It is not transparent on the display: after expansion, index 0 shows `palette[0]`. The default palette MUST have `palette[0]` = opaque black. A tile id of 0 is an ordinary tile, unrelated to this rule (§7.2).
 
 4.3. Primitive drawing writes its color argument literally, including 0. This is the only way to erase: `gfx::rect_filled` with color 0 fills with index 0, which then displays as `palette[0]`. There is no "background color" concept.
 
 4.4. `gfx::palette(index, r, g, b)` takes 8-bit components and quantizes with `round(v * 31 / 255)`, equivalently `(v * 31 + 127) / 255` in integer arithmetic. Out-of-range components MUST raise a script error.
 
-4.5. Palette mutation is runtime state. It resets when the cart restarts. It is never written back to the cart file.
+4.5. Palette mutation is runtime state. It is restored on a cart reset ([§14.9](#149-quit-and-reset)). It is never written back to the cart file.
 
 4.6. There is **no alpha blending** anywhere. Fades, shadows and transparency effects are done by (a) mutating the palette, or (b) the index-0 key, or (c) dithering drawn by the cart.
 
@@ -167,7 +168,7 @@ Each cell below is the RGB555 word, hex, little-endian on disk.
 
 Index `16 + i*16 + step` is ramp `i`, step `step` (`0` darkest, `15` lightest).
 
-### 4.7. Why the palette is shaped this way
+### 4.8. Why the palette is shaped this way
 
 4.9. The build process resolves the effective palette into the cart at pack time, so a packed cart is unaffected by later changes to the default palette.
 
@@ -177,7 +178,7 @@ Index `16 + i*16 + step` is ramp `i`, step `step` (`0` darkest, `15` lightest).
 
 `rico16 new <name> --palette rgb332` bakes the preset into the cart, after which it is ordinary palette data and the runtime cannot tell the difference.
 
-4.12. **Default palette values (normative):** The exact 256 RGB555 words are defined in the reference implementation (`rico16-core/src/palette.rs`) and pinned by a test. Any conforming runtime MUST produce bitwise-identical palette words. The HSV generation parameters (hue offsets, value range, saturation curve) are documented in the source for reproducibility but the normative values are the committed data.
+4.12. **Default palette values (normative):** The exact 256 RGB555 words are the table in [§4.7](#4-palette-and-color). Any conforming runtime MUST use those words bit-for-bit. The HSV recipe above is informative only: if the recipe and the table disagree, the table wins.
 
 4.13. **rgb332 expansion:** For `rgb332`, the 3-bit red/green and 2-bit blue are expanded to RGB555 by replicating the MSB into the LSBs: `r5 = (r3 << 2) | (r3 >> 1)`, `g5 = (g3 << 2) | (g3 >> 1)`, `b5 = (b2 << 3) | (b2 << 1) | (b2 >> 1)`. Equivalently, left-shift and fill low bits with the high bits.
 
@@ -193,11 +194,11 @@ Index `16 + i*16 + step` is ramp `i`, step `step` (`0` darkest, `15` lightest).
 load cart → build script engine → on_init() → [ on_update(dt) → on_draw() → present ] × N
 ```
 
-`on_init` MUST be called exactly once per cart start. `on_update` MUST be called exactly once before each `on_draw`.
+`on_init` MUST be called exactly once per cart start. `on_update` MUST be called exactly once before each `on_draw`. Each logical frame performs exactly one `present`; see [§14.2](#142-window-and-presentation) for pacing on displays whose refresh rate is not 60 Hz.
 
 5.3. **There is no catch-up.** If a frame takes longer than 1/60 s of wall clock, the runtime MUST NOT run extra updates to compensate; the cart simply runs slower than real time. Rationale: one update per frame keeps carts reproducible, keeps `dt` constant, and avoids the death spiral where the engine falls further behind because it is busy catching up.
 
-5.4. `system::frames()` is a `u64`, the index of the current logical frame. It is **0** throughout the first `on_update`, the following `on_draw`, and that frame's present. It increments after present, so the next `on_update` observes the new value. It does not advance while the system menu is open, and it does not advance if `on_init` requests quit before any frame.
+5.4. `system::frames()` is a `u64`, the index of the current logical frame. It is **0** throughout the first `on_update`, the following `on_draw`, and that frame's present. It increments after present, so the next `on_update` observes the new value. It does not advance while the system menu is open, and it does not advance if `on_init` requests quit or reset before any frame.
 
 `system::time()` is `(frames as f64) * dt` in IEEE-754 round-to-nearest-even. Past `2^53` frames the conversion is no longer integer-exact; carts that need a precise counter use `frames()`.
 
@@ -287,13 +288,20 @@ for i in (1..n).rev() {          // i = n-1, n-2, ..., 1
 }
 ```
 
+**RNG lifecycle (normative):**
+
+- There is a single RNG stream per cart run. It is initialized from the default seed 0 at cart start (before `on_init`) and persists across frames.
+- `system::seed(n)` replaces the stream state immediately, at the point of the call.
+- A reset ([§14.9](#149-quit-and-reset)) re-initializes the stream from seed 0.
+- The RNG state is runtime state only: it is never written to the cart file, and it is not part of `state` ([§9.7](#97-global-state)).
+
 Changing the algorithm or the default seed is a **major** version change: it breaks every recorded replay and every seeded cart.
 
 5.6. Carts MUST be byte-identically reproducible across platforms for the same seed, inputs and frame count. Therefore:
 
 - **f64 arithmetic only**; no `f32`, no fast-math, no FMA contraction differences.
 - **NaN canonicalization:** Any operation producing NaN MUST yield the canonical quiet NaN (bit pattern `0x7FF8000000000000`). Signalling NaNs MUST NOT be produced. Carts MUST NOT rely on NaN payload bits.
-- **Math functions** (`sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sqrt`, `log`, `exp`, `abs`, `floor`, `ceil`, `round`, `min`, `max`, etc.) MUST be bitwise-identical to the Rust `libm` crate **0.2.16** (musl-derived) for `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `ln`, `log10`, `pow`, `cbrt`, `hypot`. The runtime does not have to be written in Rust. It has to match those bits. `libm` 0.2.16 is the reference, not a language requirement.
+- **Math functions.** The following free functions MUST be available to carts and MUST be bitwise-identical to the Rust `libm` crate **0.2.16** (musl-derived) for all inputs: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `ln`, `log10`, `pow`, `cbrt`, `hypot`, `sqrt`. Any other transcendental function the engine exposes MUST also match `libm` 0.2.16. The runtime provides these itself; it MUST NOT rely on a host standard library whose results may differ. The runtime does not have to be written in Rust. It has to match those bits. `libm` 0.2.16 is the reference, not a language requirement.
 - `floor`, `ceil`, and `trunc` are the IEEE operations (`trunc` toward zero). `round` is half **away from zero**, including on negatives (`round(-1.5) = -2`).
 - `abs` is IEEE `abs` (clears the sign bit, including of zeros and infinities; a NaN input becomes the canonical NaN).
 - `min` / `max`: if either argument is NaN, the result is the canonical NaN. Otherwise IEEE numeric comparison, with the signed-zero rule above.
@@ -310,7 +318,7 @@ Changing the algorithm or the default seed is a **major** version change: it bre
 
 6.1. All geometry is integer pixels. Negative coordinates and coordinates beyond the screen are legal and MUST be clipped without panicking, wrapping or saturating incorrectly. A fully off-screen draw is a no-op.
 
-6.2. Arguments typed as integer MUST accept integer values. A float argument is converted to integer by **floor** (rounding toward negative infinity: `0.9 → 0`, `-0.9 → -1`). `NaN` or infinite floats where an integer is expected MUST raise a script error. **All NaN values are canonicalized to quiet NaN `0x7FF8000000000000` per [§5.6](#56-carts-must-be-byte-identically-reproducible-across-platforms-for-the-same-seed-inputs-and-frame-count).**
+6.2. Arguments typed as integer MUST accept integer values. A float argument is converted to integer by **floor** (rounding toward negative infinity: `0.9 → 0`, `-0.9 → -1`). `NaN`, infinite, or finite-outside-`i64`-range floats where an integer is expected MUST raise a script error. **All NaN values are canonicalized to quiet NaN `0x7FF8000000000000` per §5.6.**
 
 6.3. A color argument is an integer 0–255. Out-of-range values MUST raise a script error, never wrap.
 
@@ -427,7 +435,7 @@ Printable glyphs are the public-domain 8×8 font of Daniel Hepper, which traces 
 
 6.6. Primitives use the standard half-open convention: `gfx::rect(x, y, w, h)` covers pixels `x .. x+w` exclusive. `w` or `h` ≤ 0 is a no-op.
 
-6.7. Circles are rasterized using the **integer disk** `dx² + dy² ≤ r²` (with `dx`, `dy`, `r` in `i128`) so that identical arguments produce identical pixels on every platform. `gfx::circle_filled(cx, cy, r, color)` fills all pixels satisfying the disk. `gfx::circle(cx, cy, r, color)` draws the boundary: pixels in the disk of radius `r` but not in the disk of radius `r-1`. Radius `-1` is the empty set, so `r = 0` is the center pixel. `r < 0` is a no-op for filled; `r ≤ 0` is a no-op for outline. Radius 1 filled is a 3×3 block (9 pixels); outline is 4 pixels (N, S, E, W). An implementation may draw `filled(r)` and skip pixels that `filled(r-1)` would cover; it must not paint the interior. Work is proportional to the number of screen rows the disk intersects, not to `r` when the disk misses the screen (returns immediately).
+6.7. Circles are rasterized using the **integer disk** `dx² + dy² ≤ r²` (with `dx`, `dy`, `r` in `i128`) so that identical arguments produce identical pixels on every platform. `gfx::circle_filled(cx, cy, r, color)` fills all pixels satisfying the disk. `gfx::circle(cx, cy, r, color)` draws the boundary: pixels in the disk of radius `r` but not in the disk of radius `r-1`. Radius `-1` is the empty set, so `r = 0` is the single center pixel for both the filled and the outline form. `r < 0` is a no-op for both forms. Radius 1 filled is a 3×3 block (9 pixels); outline is 4 pixels (N, S, E, W). An implementation may draw `filled(r)` and skip pixels that `filled(r-1)` would cover; it must not paint the interior. Work is proportional to the number of screen rows the disk intersects; a disk that misses the screen entirely returns immediately.
 
 6.8. Lines are rasterized with **Bresenham's integer DDA** so that identical arguments produce identical pixels on every platform. `gfx::line(x0, y0, x1, y1, color)` is one pixel thick. Both endpoints are drawn when on screen. A point (`x0 == x1` and `y0 == y1`) is that one pixel.
 
@@ -450,7 +458,9 @@ Visible-range rule, bit-identical to walking every `i` and discarding off-screen
 
 Do not clip the endpoints to the screen and then restart the error term. That plots different pixels.
 
-6.9. `sprite::draw(id, x, y)` and overloads: `id` outside 0–255 raises a script error. `sprite::get_pixel(id, px, py)` and `set_pixel`: `px` or `py` outside 0–15 raises a script error. `sprite::draw_region(sx, sy, w, h, dx, dy, flip_x, flip_y)`: source rectangle outside the 256×256 sheet raises a script error. `palette(index, r, g, b)`: `index` outside 0–255 raises a script error.
+6.9. `sprite::draw(id, x, y)` and overloads: `id` outside 0–255 raises a script error. `sprite::get_pixel(id, px, py)` and `set_pixel`: `px` or `py` outside 0–15 raises a script error. `sprite::draw_region(sx, sy, w, h, dx, dy, flip_x, flip_y)`: `w` or `h` ≤ 0 is a no-op; a source rectangle that extends outside the 256×256 sheet raises a script error. `gfx::palette(index, r, g, b)`: `index` outside 0–255 raises a script error.
+
+6.9.1. `tilemap::get`/`tilemap::set` clip silently per §7.3: reads outside 0–127 return 0 and writes outside 0–127 are ignored. `tilemap::set` raises a script error if `id` is outside 0–255. `tilemap::draw` reads source cells outside 0–127 as tile id 0, consistent with `tilemap::get`.
 
 ---
 
@@ -460,10 +470,11 @@ Do not clip the endpoints to the screen and then restart the error term. That pl
 |---|---|---|---|
 | Framebuffer | 76,800 B | 1 byte/px | fixed |
 | Sprite sheet | 65,536 B (256×256, 256 tiles of 16×16) | 1 byte/px | fixed |
-| Tilemap | 16,384 B (128×128 cells) | 1 byte/cell | fixed; out-of-range access is silent (§6.9) |
+| Tilemap | 16,384 B (128×128 cells) | 1 byte/cell | fixed; out-of-range access is silent (§7.3) |
 | Palette | 512 B | RGB555 × 256 | fixed |
 | Cart code | no fixed source limit | UTF-8 Rhai | the PNG capacity in §13 |
-| Script operations | 1,000,000 per invocation | Rhai 1.27.0 operation counter | script error |
+| Script operations | 1,000,000 per entry-point call | Rhai 1.27.0 operation counter | script error |
+| Script call depth | 64 nested calls | | script error |
 | Array length | 65,536 elements | | script error on the call that would exceed it |
 | Map length | 65,536 entries | | script error |
 | String length | 1,048,576 bytes | UTF-8 | script error |
@@ -474,7 +485,7 @@ Do not clip the endpoints to the screen and then restart the error term. That pl
 
 7.3. `tilemap::get` reads outside 0–127 return 0. `tilemap::set` writes outside 0–127 are ignored. This is deliberate silent clipping so that procedural map code can run off the edges; carts MUST NOT rely on it to detect bugs.
 
-7.4. **There is no `CODE_LIMIT`.** The only limit is the PNG container payload capacity after assets are encoded. The build fails only when the payload exceeds the container, and reports used/capacity.
+7.4. **There is no separate code limit.** The only limit is the PNG container payload capacity after assets are encoded. The build fails only when the payload exceeds the container, and reports used/capacity.
 
 7.5. Limits are compile-time constants in the reference implementation. Changing any number in the table above is a spec change and a major version bump.
 
@@ -493,7 +504,7 @@ Do not clip the endpoints to the screen and then restart the error term. That pl
 
 8.1. rico-16 is **immediate mode over a persistent data model**. Every frame, the cart draws explicitly; nothing is retained except framebuffer contents.
 
-8.2. The sprite sheet and the tilemap are mutable data structures. They persist across frames, are read by blits, are edited by API, and are saved in the cart. They are **not** surfaces: they are never composited, never scrolled by hardware, and have no draw order of their own.
+8.2. The sprite sheet and the tilemap are mutable data structures. Their initial contents are stored in the cart; at runtime they persist across frames, are read by blits, and are edited by API. Runtime edits last only for the current run and are lost on reset ([§14.9](#149-quit-and-reset)). They are **not** surfaces: they are never composited, never scrolled by hardware, and have no draw order of their own.
 
 8.3. `tilemap::draw(...)` blits a rectangle of cells into the framebuffer at a given screen position, inline, in call order, exactly like `sprite::draw`. Layer ordering is therefore just call order. There are no layers.
 
@@ -524,6 +535,7 @@ A camera transform is listed as deferred ([§18](#18-deferred-features-and-non-g
 - Do not namespace what Rhai already provides. `sin`, `cos`, `sqrt`, `abs`, string and array operations remain free functions; there is no `math::` module.
 - Functions may be overloaded by arity (`sprite::draw` with 3 or 5 arguments), never by type.
 - The three entry point names in §9.2 are reserved: a cart must not repurpose `on_init`, `on_update` or `on_draw` as helpers. Other `on_`-prefixed names are ordinary functions and are never called by the runtime.
+- The global variable name `state` ([§9.7](#97-global-state)) is reserved: a cart MUST NOT declare or shadow it.
 - **Methods cannot be imported.** `array.push`, string methods, etc. stay global Rhai built-ins. `import "gfx" as g;` gives you `g::clear(0)`, not `g.clear(0)`.
 
 ### 9.2. Entry points
@@ -595,12 +607,18 @@ Signatures below are normative. `color` is an index 0–255. `button` is a `Butt
 | `system::frames()` | u64, 0 on the first frame |
 | `system::time()` | f64 seconds, `frames * dt` |
 | `system::seed(n)` | reseed the RNG |
-| `system::quit()` | ends the cart cleanly after the current frame |
+| `system::quit()` | ends the cart after the current frame and exits (see §14.9) |
 | `system::quit(message)` | same, printing `message` to stdout (editor: console pane) first |
-| `system::get_state()` | returns a copy of the global state map (see §9.7) |
-| `system::set_state(map)` | replaces the global state map with a clone of `map` |
+| `system::reset()` | resets the cart from its original bytes after the current frame (see §14.9) |
 
-**Audio (stubbed in v3)**
+**Output**
+
+| Function | Notes |
+|---|---|
+| `print(value)` | writes `value` as one line to stdout (editor: console pane) |
+| `debug(value)` | identical to `print`; for development |
+
+**Audio (stubbed in v1)**
 
 | Function | Notes |
 |---|---|
@@ -633,41 +651,45 @@ Measured host-call overhead is roughly 0.5–2 µs per Rhai function call, so a 
 
 In addition to being importable (`import "gfx" as g;`), the standard modules are **also available as ambient globals** without import: `gfx::clear(0)`, `sprite::draw(1, 10, 10)`, `input::held(Button::Left)`, etc. This is for ergonomics; the import form is preferred for clarity and to avoid ambiguity.
 
-The reserved module names are: `gfx`, `sprite`, `tilemap`, `input`, `system`, `audio`, `rnd`, `Button`. A cart MUST NOT define its own module with these names.
+The reserved module names are: `gfx`, `sprite`, `tilemap`, `input`, `system`, `audio`, `rnd`, `Button`. A cart MUST NOT define its own module with these names. The global variable `state` is likewise reserved ([§9.7](#97-global-state)).
 
-### 9.7. Global state (cart-wide mutable map)
+### 9.7. Global state
 
-The runtime provides a single mutable map owned by the cart, accessible only via `system::get_state()` and `system::set_state(map)`. This is the **only** way to persist data across frames in the entry script.
+The runtime provides one **global variable named `state`**, visible to the entry point and to every module. It is the **only** way to persist data across frames. Its structure is free: it may hold any value — an object map, an array, a number, anything.
 
-- `system::get_state()` returns a clone of the current state map (or `#{}` if never set).
-- `system::set_state(map)` replaces the stored map with a clone of `map`.
-- The map is cloned on get/set; mutations to the returned map do not affect the stored state until `set_state` is called.
-- At cart start (before `on_init`), the state map is empty (`#{}`).
-- The state map is **not** serialized into the cart binary. Restart (§14.10) reloads the cart from its original bytes, so script globals and the state map are reset. Save data persistence is deferred (§18.1).
+- At cart start (before `on_init`), `state` is an empty object map (`#{}`).
+- Reading, mutating in place (`state.px = 5`, `state.items.push(x)`), and reassigning the whole variable (`state = [...]`) all persist across frames and are visible from every function, including modules.
+- The cart owns `state` completely. The runtime never inspects it; it only clears it on reset ([§14.9](#149-quit-and-reset)). There is no getter, no setter, and no schema.
+- The name `state` is reserved: a cart MUST NOT declare or shadow it ([§9.1](#91-naming-rules)).
+- `state` is **not** serialized into the cart binary. A reset clears it back to `#{}`. Save data persistence is deferred ([§18.1](#181-deferred-not-in-v1-expected-later-design-leaves-room)).
 
 **Pattern:**
 
 ```rhai
 fn on_init() {
-    let s = system::get_state();
-    if !s.contains("px") {
-        s["px"] = 160;
-        s["py"] = 120;
-        s["scene"] = "title";
-        system::set_state(s);
-    }
+    state.px = 160;
+    state.py = 120;
+    state.scene = "title";
+    state.enemies = [];
 }
 
 fn on_update(dt) {
-    let s = system::get_state();
-    if s["scene"] == "play" {
-        s["px"] = s["px"] + 1; // example
+    if state.scene == "play" {
+        state.px += 1; // example
     }
-    system::set_state(s);
 }
 ```
 
-Modules **cannot** access this map directly. They receive state as function arguments and return updated state (see §11.5).
+### 9.8. Engine configuration and sandbox
+
+The runtime MUST configure the script engine so that a cart's behaviour is fully determined by the cart and this document:
+
+- **Available to carts:** the Rhai language, the global `state` variable ([§9.7](#97-global-state)), the standard modules ([§9.6](#96-standard-modules-as-ambient-globals)), the math and string/array/map operations Rhai provides (subject to §5.6), and `print`/`debug` ([§9.3](#93-surface)). `import` resolves only embedded modules and the reserved standard modules ([§11.2](#112-build-time-resolution)).
+- **Unavailable to carts:** dynamic evaluation (`eval`), wall-clock or monotonic time, host randomness, filesystem, network, environment, process and OS access, and any module not embedded in the cart. Calling one of these is a script error, never a no-op.
+- **Operation limit:** the limit in [§7](#7-resources-and-limits) applies per entry-point call. The counter resets at the start of `on_init` and at the start of each `on_update` and each `on_draw`. Module functions called during a callback draw from the same per-call budget.
+- **Call depth:** recursion is limited per the [§7](#7-resources-and-limits) table. Exceeding it is a script error; it MUST NOT crash or hang the host.
+
+A cart MUST NOT depend on any engine behaviour that this document does not fix.
 
 ---
 
@@ -804,6 +826,7 @@ import "gfx" as g;           // standard module
 At build time:
 
 - All imports are resolved **relative to `src/`** (the source root). The importing file's location is irrelevant.
+- An import path that matches a reserved standard-module name (`gfx`, `sprite`, `tilemap`, `input`, `system`, `audio`, `rnd`, `Button` — see [§9.6](#96-standard-modules-as-ambient-globals)) resolves to the native standard module and is never looked up in `src/`.
 - Append `.rhai` when missing.
 - Reject `..` escapes, absolute paths, cycles, and non-literal import paths.
 - Embed every reachable module source into the PNG.
@@ -820,8 +843,8 @@ At runtime:
 
 ### 11.4. Module semantics
 
-- Modules are **stateless**. Module-level `let`/`const` are not visible inside module functions, and module functions cannot see main's top-level variables.
-- Scene modules must receive and return state explicitly.
+- Modules have **no persistent state of their own**. Module-level `let`/`const` are not visible inside module functions, and module functions cannot see main's local variables.
+- Module functions **can** read and write the global `state` ([§9.7](#97-global-state)), which is the shared channel between main and its modules.
 - Transitive imports and standard native modules under an alias work.
 
 ### 11.5. Scene pattern
@@ -830,47 +853,38 @@ Only `main.rhai` (the entry point) has the runtime entry points. A module's `on_
 
 ```rhai
 // scenes/play.rhai
-fn update(dt, state) {
-    let next = state.clone();
-    if input::held(Button::Left) { next["px"] = next["px"] - 2; }
-    next
+fn update(dt) {
+    if input::held(Button::Left) { state.px -= 2; }
 }
 
-fn draw(state) {
+fn draw() {
     gfx::clear(1);
-    gfx::rect_filled(state["px"] - 4, state["py"] - 4, 8, 8, 9);
+    gfx::rect_filled(state.px - 4, state.py - 4, 8, 8, 9);
 }
 
 // main.rhai
 import "scenes/play" as play;
 
 fn on_init() {
-    let s = system::get_state();
-    if !s.contains("px") {
-        s["px"] = 160;
-        s["py"] = 120;
-        s["scene"] = "play";
-        system::set_state(s);
-    }
+    state.px = 160;
+    state.py = 120;
+    state.scene = "play";
 }
 
 fn on_update(dt) {
-    let s = system::get_state();
-    if s["scene"] == "play" {
-        s = play::update(dt, s);
+    if state.scene == "play" {
+        play::update(dt);
     }
-    system::set_state(s);
 }
 
 fn on_draw() {
-    let s = system::get_state();
-    if s["scene"] == "play" {
-        play::draw(s);
+    if state.scene == "play" {
+        play::draw();
     }
 }
 ```
 
-That is the honest pattern: modules are libraries, main owns the game state via `system::get_state`/`set_state`.
+That is the honest pattern: modules are libraries with no state of their own, and the cart's data lives in the single global `state`, which main and modules both use.
 
 ---
 
@@ -912,7 +926,8 @@ That is the honest pattern: modules are libraries, main owns the game state via 
 - Overflow PNG: 1280×960 → ~1.84 MB payload → ~1.76 MB for code with full assets.
 - Build automatically uses overflow size if payload exceeds default capacity.
 - No language-level token/byte limit. Build fails only when payload exceeds container, and reports used/capacity.
-- Compression (zlib) is reserved for future (flag in format); not in v1.
+- If the payload exceeds the 1280×960 capacity, the build fails and reports used/capacity.
+- Payload compression is reserved for a future format (a flag in the binary header); v1 embeds the cart uncompressed. This is unrelated to the PNG container's own zlib-compressed `IDAT`, which every PNG requires and which the build MUST always emit ([§13.6](#136-determinism)).
 
 ---
 
@@ -951,9 +966,9 @@ author = "..."
 version = "..."
 entry = "src/main.rhai"
 ```
-Additional keys from `[cart]` are preserved. Unknown keys are preserved.
+Additional keys from `[cart]` are preserved. Unknown keys are preserved. The metadata section is authoritative for cart metadata; other copies (the advisory `tEXt` chunk of [§13.3](#133-advisory-metadata-chunk), a source `cart.toml`) are not consulted by the runtime.
 
-Maximum size depends on PNG container. In format version 2, `flags` bit 0 (palette present) MUST be 1, because packing always resolves a palette into the cart. Other flag bits are reserved and MUST be 0 on write; loaders MUST ignore unknown bits.
+Maximum size depends on the PNG container. The `flags` field is reserved: it MUST be 0 on write, and loaders MUST ignore unknown bits. A palette is always present, because packing always resolves one into the cart.
 
 ### 13.2. PNG v1: The image is the label
 
@@ -967,18 +982,18 @@ The PNG is **640×480 (default) or 1280×960 (overflow), 8-bit RGBA, non-interla
 - 640×480: 460,800 bytes (460,784 after 16-byte header)
 - 1280×960: 1,843,200 bytes (1,843,184 after 16-byte header)
 
-13.2.3. The payload begins with the blob header below, then the binary cart v3 ([§13.1](#131-binary-cart)). Nibbles after the end of the payload MUST be zero. Because the authored art has no low-nibble information by definition, filling them cannot damage it.
+13.2.3. The payload begins with the blob header below, then the binary cart ([§13.1](#131-binary-cart)). Nibbles after the end of the payload MUST be zero. Because the authored art has no low-nibble information by definition, filling them cannot damage it.
 
 ```
 offset  field
 0       magic "R16P"
-4       blob version (u16) = 3
+4       blob version (u16) = 1
 6       PNG size variant (u16): 0 = 640×480, 1 = 1280×960
 8       payload length (u32) — length of the binary cart that follows
 12      CRC-32 (IEEE) of that payload
 ```
 
-13.2.4. **Cover art.** `rico16 build` takes `--label <image>` or generates a label when none is given. The generated label is deterministic — a dark field, the cart title rendered in the built-in 8×8 font, the author line, and a palette strip of the cart's own colours — so that packing the same cart twice produces the same PNG.
+13.2.4. **Cover art.** `rico16 build` takes `--label <image>` or generates a label when none is given. The generated label is deterministic in content — a dark field, the cart title rendered in the built-in 8×8 font, the author line, and a palette strip of the cart's own colours — so that packing the same cart twice produces the same visible cover art. Its exact geometry is implementation-defined, and byte-identical files are not required ([§13.6](#136-determinism)).
 
 13.2.5. **Custom label cover-fit (normative).** `--label` is a non-interlaced 8-bit PNG, decoded to straight RGBA8. Composite over black first: each channel becomes `(c * a) / 255`, truncating. Then cover-fit into the variant size by sampling the source pixel that contains the image of each destination pixel's center.
 
@@ -1006,13 +1021,22 @@ Then quantize each channel with `(v * 15 + 127) / 255` into the high nibble.
 
 ### 13.3. Advisory metadata chunk
 
-`rico16 build` SHOULD also emit a `tEXt` chunk with keyword `rico16` and value `v=3;variant=<0|1>;len=<payload length>;crc=<8 uppercase hex>`. Tools MAY use it to identify carts without decoding pixels. The pixel payload is authoritative; if the chunk and the pixels disagree, the runtime MUST trust the pixels and SHOULD warn.
+`rico16 build` SHOULD also emit a `tEXt` chunk with keyword `rico16` and value `v=1;variant=<0|1>;len=<payload length>;crc=<8 uppercase hex>`. Tools MAY use it to identify carts without decoding pixels. The pixel payload is authoritative; if the chunk and the pixels disagree, the runtime MUST trust the pixels and SHOULD warn.
 
 ### 13.4. Reading a cart PNG v1
 
-A loader MUST: verify the magic, verify blob version = 1, verify PNG size variant (0 or 1), verify that the payload fits the capacity for that variant, verify the CRC-32, then parse. Any mismatch MUST be a clear error naming the field that failed. A loader MUST NOT attempt to guess or repair a corrupt cart.
+A loader MUST, in order:
 
-**Additional validation:** Verify palette entry bit 15 is 0. Verify module table does not overrun payload. Verify that the bytes after the fixed header (82,452 bytes: magic + version + flags + 4 lengths + metadata strings + sheet + map + palette) equal `code_len + modules_len + metadata_len` exactly, with nothing left over and nothing missing.
+1. verify the PNG is a valid, non-interlaced, 8-bit RGBA image whose pixel dimensions are exactly the dimensions of the declared variant (640×480 for variant 0, 1280×960 for variant 1);
+2. verify the blob magic is `R16P` and the blob version is 1;
+3. verify the payload length fits the variant's capacity and does not exceed the bytes available after the 16-byte blob header;
+4. verify the CRC-32 of the payload;
+5. verify that every nibble after the end of the payload is zero;
+6. parse the binary cart ([§13.1](#131-binary-cart)).
+
+Any mismatch MUST be a clear error naming the field that failed. A loader MUST NOT attempt to guess or repair a corrupt cart.
+
+**Binary cart validation.** Verify the cart magic `R16C` and the format version. Verify that the three length fields are consistent: the bytes after the 82,452-byte fixed header (magic + format version + flags + the three length fields + sprite sheet + tilemap + palette) MUST equal `code_len + modules_len + metadata_len` exactly, with nothing left over and nothing missing. Verify the module table does not overrun `modules_len`. Verify every palette entry has bit 15 clear. Verify module paths are unique, relative, free of the `.rhai` extension, and sorted lexicographically. Verify the metadata section is valid UTF-8 TOML.
 
 ### 13.5. Durability rules
 
@@ -1022,9 +1046,23 @@ A loader MUST: verify the magic, verify blob version = 1, verify PNG size varian
 
 13.5.3. Alpha is always `0xFF` and carries no payload. Because alpha is constantly 255, a tool that drops the alpha channel and keeps RGB **does not** destroy the cart. A tool that requantizes RGB does. The distribution warning is: do not resize, do not JPEG, do not "optimize" colors. Alpha stripping is survivable.
 
+13.5.4. **File size.** The payload occupies the low nibbles of every pixel and is effectively incompressible, so a cart PNG is much larger than its cover art alone would suggest (roughly the size of the raw RGB data). This is expected: a 640×480 cart is on the order of 1 MB and a 1280×960 cart on the order of 4 MB. Distributors MUST NOT apply "image optimization" to reduce it.
+
 ### 13.6. Determinism
 
-`rico16 build` SHOULD be deterministic: the same project source, the same label input and the same encoder settings produce a byte-identical PNG. The generated default label MUST be deterministic. Module table entries are sorted by path. Reproducible builds are a stated goal.
+The **binary cart payload** MUST be deterministic: the same project source produces the same payload bytes, so the embedded cart (magic, length, CRC) is reproducible and comparable.
+
+The **PNG container bytes** need not be byte-identical. Different encoders, DEFLATE implementations, or compression levels may produce different files for the same payload; this is acceptable because the payload is what runs. Two carts with the same payload behave identically.
+
+To keep payloads comparable, the build MUST:
+
+- emit the payload with the exact bytes defined by [§13.1](#131-binary-cart) and [§13.2](#132-png-v1-the-image-is-the-label);
+- sort module table entries by path ([§13.1](#131-binary-cart));
+- embed no timestamps, random data, absolute paths, or host-specific ordering in the payload.
+
+The PNG wrapper MUST be a valid **8-bit RGBA, non-interlaced** image of the variant size with alpha `0xFF` and no palette, so the payload survives a lossless round-trip. The encoder is otherwise free: any lossless DEFLATE backend and compression settings are acceptable, and the generated default label only needs to be deterministic enough that a re-pack of the same project is recognisably the same cart (it is **not** required to be byte-identical).
+
+Tools that compare carts MUST compare the payload (magic, length, CRC), never the whole file. In particular, a `build` after `unpack` is **not** required to reproduce the original project, its cover art, or its file bytes: `unpack` produces a canonical project ([§15.4](#154-rico16-unpack-png-output-dir)) whose rebuild carries the same payload.
 
 ---
 
@@ -1034,13 +1072,13 @@ A loader MUST: verify the magic, verify blob version = 1, verify PNG size varian
 
 The player accepts two inputs:
 - A project directory (path containing `cart.toml`) — builds in memory, then runs.
-- A packed PNG (v3) — loads directly.
+- A packed PNG (v1) — loads directly.
 
 ### 14.2. Window and presentation
 
-The player opens a single window, scaled per [§3.7](#3-display-and-framebuffer), presenting once per update with vsync. On displays whose refresh rate is not a multiple of 60, judder is expected and accepted.
+The player opens a single window, scaled per [§3.7](#3-display-and-framebuffer). Each logical frame is presented exactly once, synchronised to vsync. On displays whose refresh rate is not a multiple of 60, judder is expected and accepted.
 
-**Frame pacing:** The runtime MUST limit updates to at most one per 1/60 s of wall time. If the vsync interval is shorter than 16.67 ms (e.g., 144 Hz display), the runtime MUST skip presents (not updates) to maintain 60 Hz logical rate. `dt` is always `1/60`. `system::frames()` and `system::time()` advance only on logical frames, not on skipped presents.
+**Frame pacing:** The runtime MUST NOT begin a new logical frame sooner than 1/60 s of wall time after the previous one, and MUST NOT present more than once per logical frame. On a display whose refresh interval is shorter than 16.67 ms (for example 144 Hz), the runtime simply waits for the next vsync boundary before starting the next logical frame; the intermediate vsync intervals produce neither an update nor a present. `dt` is always `1/60`. `system::frames()` and `system::time()` advance only on logical frames.
 
 ### 14.3. Default key map
 
@@ -1058,23 +1096,23 @@ Carts refer to logical buttons, never to keys, so a remap changes nothing in car
 
 ### 14.4. Reserved keys
 
-Reserved keys, never visible to a cart: `Esc` (opens system menu), `F11` (toggle fullscreen), `Ctrl+R` (restart cart). A cart MUST NOT be able to bind them.
+Reserved keys, never visible to a cart: `Esc` (opens system menu), `F11` (toggle fullscreen), `Ctrl+R` (reset cart). A cart MUST NOT be able to bind them.
 
 ### 14.5. System menu
 
 `Esc` opens the **system menu**, a runtime-provided overlay that pauses the cart. The system menu provides:
 
 - **Resume** — closes the menu, continues execution
-- **Restart** — restarts the cart (calls `system::quit()` internally, then reloads)
-- **Exit** — calls `system::quit()` and closes the window
+- **Restart** — resets the cart (see [§14.9](#149-quit-and-reset))
+- **Exit** — quits the cart and closes the window
 
 The system menu is drawn by the runtime using a **separate overlay buffer** (not the cart framebuffer). It does not count against the cart's draw budget. While the menu is open, `on_update` and `on_draw` are not called; logical time does not advance (`system::frames()` and `system::time()` pause).
 
-**Cart-owned pause menus:** Carts that need an in-game pause menu (triggered by a gameplay button) must implement it themselves using `system::get_state`/`set_state` and conditional drawing. There is no `Button::Menu` magic button.
+**Cart-owned pause menus:** Carts that need an in-game pause menu (triggered by a gameplay button) must implement it themselves using `state` and conditional drawing. There is no `Button::Menu` magic button.
 
 ### 14.6. Input sampling
 
-Input is sampled once per frame, immediately before `on_update`. Edge state (`pressed`, `released`) compares the current frame's bitmask with the previous frame's. While the system menu is open, the cart's input bitmask is frozen (held buttons remain held, no new pressed/released events are generated).
+Input is sampled once per frame, immediately before `on_update`. Edge state (`pressed`, `released`) compares the current frame's bitmask with the previous frame's; on the first frame the previous bitmask is all zeros. While the system menu is open, the cart's input bitmask is frozen (held buttons remain held, no new pressed/released events are generated).
 
 ### 14.7. Focus loss
 
@@ -1085,15 +1123,18 @@ On window focus loss the runtime MUST clear all held buttons. Key-repeat events 
 - **Player mode:** print `<file>:<line>:<col>: <message>` to stderr, close the window, exit with code 1. The process MUST NOT panic.
 - **Editor mode:** halt the cart, keep the editor alive, show the message in the console pane. See [§16](#16-editor).
 
-### 14.9. Quit behavior
+### 14.9. Quit and reset
 
-`system::quit()` ends the cart after the current frame and exits with code 0. `system::quit(message)` prints `message` to stdout first (in the editor, to the console pane) and exits the same way. A message is not an error and MUST NOT go to stderr.
+There are two distinct ways to end a cart run:
 
-The system menu's "Restart" action calls `system::quit()` internally, then the runtime reloads the cart and starts a new process (or reinitializes the engine). The system menu's "Exit" action calls `system::quit()` and exits the process.
+- **Quit.** `system::quit()` ends the cart after the current frame and exits the process with code 0. `system::quit(message)` prints `message` to stdout first (in the editor, to the console pane) and exits the same way. A message is not an error and MUST NOT go to stderr.
+- **Reset.** `system::reset()` ends the current run after the current frame and immediately starts a new run from the cart's original bytes, without exiting the process. The runtime re-runs `on_init`, resets `system::frames()` to 0, re-initializes the RNG from seed 0 ([§5.5](#5-timing-the-game-loop-determinism)), restores the cart's palette, clears `state` back to `#{}`, and discards all other runtime state. Nothing is preserved across a reset.
+
+The system menu ([§14.5](#145-system-menu)) uses both: **Restart** performs a reset, and **Exit** performs a quit. `system::reset()` is the script-facing equivalent of the editor's hot reload ([§16.3](#163-required-actions)). Reset is not a quit: it MUST NOT exit the process or be reported as an error.
 
 ### 14.10. Audio
 
-There is no audio output in v1; `audio::play` is accepted and ignored. The audio device MUST NOT be opened.
+There is no audio output in v1; `audio::play` is accepted and ignored. The audio device MUST NOT be opened. Audio is provisional and deferred; see [§18.3](#183-scope-notes).
 
 ### 14.11. Module resolver integration
 
@@ -1122,6 +1163,7 @@ Builds the project to a packed PNG.
 - Reads `cart.toml`, validates, compiles assets, resolves imports, packs.
 - `--label` provides custom cover art (resampled to PNG dimensions).
 - `--variant` forces PNG size: `default` (640×480) or `overflow` (1280×960). Default is auto: use default, switch to overflow if payload exceeds capacity.
+- Fails with a clear message if the payload exceeds the forced or overflow capacity.
 - Reports used/capacity bytes on success.
 - Exits with code 0 on success, non-zero on error with clear message.
 
@@ -1129,7 +1171,7 @@ Builds the project to a packed PNG.
 
 Runs a cart.
 - If argument is a directory (contains `cart.toml`): builds in memory, then runs.
-- If argument is a `.png` file: loads and runs directly (v3).
+- If argument is a `.png` file: loads and runs directly (v1).
 - No separate build step needed for project directories.
 
 ### 15.4. `rico16 unpack <png> <output-dir>`
@@ -1137,9 +1179,10 @@ Runs a cart.
 Inspects a shared cart PNG.
 - Reconstructs canonical full sprite sheet (256×256) as `assets/sprites.png`, tilemap (128×128) as `assets/map.png`, palette (256×1) as `assets/palette.png`.
 - Extracts all embedded module sources to `src/` preserving directory structure.
+- Writes the entry-point source to the path recorded in the cart metadata `entry` (default `src/main.rhai`), creating parent directories as needed, and sets `entry` in the written `cart.toml` to that path.
 - Writes a `cart.toml` with metadata from the cart and **canonical asset placements**:
   ```toml
-  format = 3
+  format = 1
 
   [cart]
   title = "..."
@@ -1159,7 +1202,8 @@ Inspects a shared cart PNG.
   [palette]
   file = "assets/palette.png"
   ```
-- **Does not** reconstruct the original art layout (strip files); only the canonical compiled form.
+- **Does not** reconstruct the original art layout (strip files) or the cover art; only the canonical compiled form.
+- `unpack` is in scope and is the supported way to share a project as a single file; see [§18.3](#183-scope-notes).
 
 ### 15.5. `rico16 fmt <project>`
 
@@ -1171,7 +1215,7 @@ Formats all `.rhai` files in `src/` using a Rhai formatter (deferred; may be rem
 
 ### 16.1. Overview
 
-The editor is a ratatui terminal application (crossterm backend). It is a separate mode of the same binary: `rico16 edit <project>`.
+The editor is a ratatui terminal application (crossterm backend). It is a separate mode of the same binary: `rico16 edit <project>`. The editor is a convenience, not a requirement — any IDE or text editor can edit a project. It starts minimal and grows feature by feature; see [§18.3](#183-scope-notes).
 
 ### 16.2. Required panes (first milestone)
 
@@ -1184,7 +1228,7 @@ The editor is a ratatui terminal application (crossterm backend). It is a separa
 
 - Run, stop, restart
 - **Build-on-run**: `rico16 run` semantics from the editor
-- **Rebuild on save**: when a `.rhai` or asset file is saved, rebuild in background; hot reload the running cart (restart cart, re-run `on_init`; MUST NOT attempt to preserve script globals)
+- **Rebuild on save**: when a `.rhai` or asset file is saved, rebuild in background; hot reload the running cart by resetting it (re-run `on_init`; nothing is preserved, per [§14.9](#149-quit-and-reset))
 
 ### 16.4. Game window
 
@@ -1227,19 +1271,13 @@ This document's version is `MAJOR.MINOR`. The cart format carries its own versio
 
 ### 17.4. Compatibility
 
-A runtime MUST load carts of an equal or older major version. It MUST reject a newer major version with a clear message rather than misinterpreting it. The binary format version (u16) increments on major changes. Minor spec changes do not change the binary format version.
+A runtime MUST load carts of an equal or older major version. It MUST reject a newer major version with a clear message rather than misinterpreting it. The binary cart format version and the PNG blob version (both `u16`) increment on major changes. Minor spec changes do not change either version.
 
 ### 17.5. Testing requirements
 
-Any change to format, limits, RNG or API MUST land with: an updated table in this document, a changelog entry below, and a test fixture. Format changes additionally require a parse→serialize round-trip test.
+Any change to format, limits, RNG or API MUST land with: an updated table in this document, a changelog entry, and a test fixture. Format changes additionally require a parse→serialize round-trip test.
 
-**Conformance test vectors (normative, in `tests/conformance/`):**
-- RNG: seed 0 → first 10 `rnd::float()` and `rnd::int(0, 100)` values
-- Line: clipped segment from (-10, -10) to (330, 250) → exact pixel set
-- Circle: `circle_filled(160, 120, 5)` → exact pixel set
-- Palette: all 256 RGB555 words
-- Font: 8×8 bitmap for printable ASCII 32–126 + placeholder
-- PNG nibble walk: encode/decode round-trip for a known cart
+The normative conformance vectors live in [§20](#20-conformance-vectors). A runtime or build that fails any of them is non-conforming. Vectors MUST be extended, never weakened, when behaviour is added.
 
 ---
 
@@ -1256,8 +1294,8 @@ Any change to format, limits, RNG or API MUST land with: an updated table in thi
 - Bulk palette operations
 - A camera/transform stack
 - Arbitrary sprite scaling and rotation
-- Save data persistence (beyond `system::get_state`/`set_state` which is in-cart)
-- Zlib compression for PNG payload
+- Save data persistence (beyond `state`, which is in-cart and cleared on reset)
+- Compression of the embedded binary-cart payload (distinct from the PNG container's own `IDAT`)
 - Rhai formatter for `rico16 fmt`
 
 ### 18.2. Non-goals (will not happen)
@@ -1273,8 +1311,23 @@ Any change to format, limits, RNG or API MUST land with: an updated table in thi
 - Runtime file imports
 - Private PNG chunks as the only payload
 - `set_meta()` / `set_gfx()` — metadata is needed before execution, assets as code bloat the payload, and the cart becomes order-dependent executable data. Use `cart.toml`.
-- `.r16` text format authoring (not for v3)
+- `.r16` text format authoring (not for v1)
 - Comment-fenced `__` sections
+
+### 18.3. Scope notes
+
+The items below are **deliberately staged**: the priority is a working engine and playable games first, after which these areas are filled in. Nothing here is rejected.
+
+- **Payload error-correction.** The cart payload carries only a CRC-32, which *detects* corruption but cannot *repair* it ([§13.5](#135-durability-rules)). Redundancy or erasure coding is a later concern.
+- **Audio.** Audio is too large and too under-specified to include now. `audio::play` stays a stub ([§14.10](#1410-audio)); a full sound and pattern model will be specified later.
+- **Editor.** A graphical editor is not required to make games — any IDE or text editor can edit `cart.toml`, `src/` and `assets/`. The reference editor ([§16](#16-editor)) starts minimal (open a project, edit text, build and run, console) and grows feature by feature. It is a convenience, not a dependency.
+
+Two things are explicitly **in scope** and will be built:
+
+- **`unpack`.** `rico16 unpack` ([§15.4](#154-rico16-unpack-png-output-dir)) is implemented. It is how a project is shared as a single PNG — for example over a chat app — and unpacked back into a working project. It reconstructs the canonical compiled form, not the original art layout or cover art. There is no hosted cart library.
+- **Multi-platform support.** Windows, macOS and Linux are all first-class from the first release.
+
+These sections will be revised as the engine and its games mature.
 
 ---
 
@@ -1286,7 +1339,7 @@ Any change to format, limits, RNG or API MUST land with: an updated table in thi
 | Color depth | 8-bit indexed only | Cheaper, enforces identity, palette swaps become free effects |
 | True color | Dropped | Not worth the API and memory cost; a console needs a palette |
 | Default palette | 256 entries: black, 15 base colours, 15 ramps × 16 | Authors never have to pick 256 colours; ramps make shading mechanical |
-| Palette values | Generated HSV ramps, committed as data, pinned by a test | Unblocks the runtime; re-curation is a data edit, and packed carts keep their snapshot |
+| Palette values | Generated HSV ramps, committed as the normative table | Unblocks the runtime; re-curation is a data edit, and packed carts keep their snapshot |
 | RGB332 | A named palette preset, not the colour model | Same memory as indexed, but keeps palette effects and index-0 transparency |
 | Tiles | 16×16 PU | 320×240 divides exactly into 20×15 |
 | Sprite sheet | 256×256, 256 tiles | 4× PICO-8's pixel budget; fits the payload with code and map |
@@ -1312,18 +1365,30 @@ Any change to format, limits, RNG or API MUST land with: an updated table in thi
 | Payload encoding | Low nibbles of RGB (12 bits/px), A=0xFF | Survives lossless re-encoding; no private chunks; truly opaque |
 | Code limit | None (PNG capacity only) | Our own limit, not OS/Rhai limit; reported used/capacity |
 | Asset handling | Explicit placement in `cart.toml` | No filename conventions; overlaps/out-of-bounds rejected |
-| Scene pattern | Modules are libraries, main owns state via `system::get_state` | Honest pattern; no hidden lifecycle hooks |
+| Global state | One reserved global variable `state`, resolved by the engine | Free structure, no get/set boilerplate, clone-free, visible to modules |
+| Scene pattern | Modules are libraries with no state of their own; data lives in `state` | No state threading, no hidden lifecycle hooks |
 | RNG module | `rnd` module (float, int, choice, shuffle) | Namespaced, deterministic xoshiro256**, `system::seed` control |
 | System menu | `Esc` opens runtime overlay; carts build own pause menus | No magic button; carts have full control |
-| Frame pacing | At most 1 update per 1/60 s wall time | Correct speed on high-refresh displays |
+| Restart | A separate reset, not a quit | Restart must reload the cart without killing the process |
+| Frame pacing | One present per logical frame; at most 60 logical frames/s | Correct speed on high-refresh displays |
+| Versions | One format version (`= 1`) across binary cart, blob, and `cart.toml` | No parallel version numbers to keep in sync |
+| Build determinism | The payload must be deterministic; the PNG file bytes need not be | The payload is what runs; container bytes are an encoding detail |
+| Language | Rust | One toolchain, no C dependency, pure-Rust windowing |
+| Window/presentation | `winit` + software framebuffer (`softbuffer`/`pixels`) | Pure Rust, no GPU/shaders, integer scaling is trivial |
+| Platforms | Windows, macOS and Linux from day one | A console should run everywhere |
+| Rhai | One pinned version, minimal feature set | Stability and safety over feature breadth |
+| Math (first cut) | Platform `std`; `libm` bit-exactness is later | Playable games first; §5.6 hardening is tracked |
+| `unpack` | Implemented | Single-file project sharing without a hosted library |
+| Editor | Minimal first, grown feature by feature | Not required to make games |
+| Milestone scope | Engine and playable games first; audio and payload error-correction later | Playability before polish; see [§18.3](#183-scope-notes) |
 
 ---
 
-## 21. Conformance vectors
+## 20. Conformance vectors
 
 A runtime or build that fails any of these is non-conforming.
 
-### 21.1. RNG, seed 0
+### 20.1. RNG, seed 0
 
 State after `seed_xoshiro256(0)`, four `u64`s:
 
@@ -1356,19 +1421,19 @@ From a fresh seed 0, eight calls to `rnd::int(1, 6)` return `4, 5, 1, 3, 5, 6, 3
 
 From a fresh seed 0, `rnd::shuffle` of `[0, 1, 2, 3]` yields `[1, 0, 3, 2]`.
 
-### 21.2. Line
+### 20.2. Line
 
 Line `(0,0)`–`(4,-2)`, before screen clip: pixels in order `(0,0), (1,-1), (2,-1), (3,-2), (4,-2)`. On screen that is only `(0,0)`.
 
 Line `(0,0)`–`(3,3)`: `(0,0), (1,1), (2,2), (3,3)`.
 
-### 21.3. Disk
+### 20.3. Disk
 
 Disk of radius 2 centered at the origin:
 - Outline pixels (relative): `(±2,0), (0,±2), (±1,±1)` — eight pixels.
 - Filled pixel count at radius 0, 1, 2 is 1, 5, 13.
 
-### 21.4. `rgb332`
+### 20.4. `rgb332`
 
 | Index | RGB555 |
 |---|---|
@@ -1378,7 +1443,7 @@ Disk of radius 2 centered at the origin:
 | 3 | `7C00` |
 | 255 | `7FFF` |
 
-### 21.5. Palette anchors
+### 20.5. Palette anchors
 
 | Index | Word |
 |---|---|
@@ -1388,22 +1453,46 @@ Disk of radius 2 centered at the origin:
 
 Index 6 expands to RGB8 `(255, 24, 24)`.
 
-### 21.6. CRC
+### 20.6. CRC
 
 `CRC-32("123456789") = CBF43926`.
 
-### 21.7. `dt`
+### 20.7. `dt`
 
 The bit pattern of `dt` is `3F91111111111111`.
 
-### 21.8. Quantizers
+### 20.8. Quantizers
 
-`(255 * 31 + 127) / 255 = 31`. `(0 * 31 + 127) / 255 = 0`. `(128 * 31 + 127) / 255 = 15`.
+`(255 * 31 + 127) / 255 = 31`. `(0 * 31 + 127) / 255 = 0`. `(128 * 31 + 127) / 255 = 16`.
 
 `(255 * 15 + 127) / 255 = 15`. `(0 * 15 + 127) / 255 = 0`.
 
+### 20.9. Global state
+
+With `state` starting as `#{}`:
+
+- After `on_init` runs `state.n = 0` and `on_update(dt)` runs ten times doing `state.n += 1`, `state.n == 10`. Mutation in `on_update` is visible on the next frame.
+- `on_draw` may mutate `state` as well; mutations made there are visible on the next frame.
+- A module function that does `state.n += 1` mutates the same `state` the entry point sees.
+- Reassigning the whole variable (`state = #{ n: 7 }`) inside a function that takes parameters is visible to the next call, and `state` may change type (for example to an array).
+
 ---
 
-## 20. Changelog
+## 21. Reference implementation (informative)
 
-- **3.0 (draft)** — Project-based development (`cart.toml`, `src/`, `assets/`). Real Rhai module imports with embedded sources. Standard modules importable and ambient. PNG v3: 640×480 default, 1280×960 overflow (~378 KB / ~1.76 MB code capacity). RGB-only payload (12 bpp), A=0xFF. No `CODE_LIMIT`. Explicit asset placement in `cart.toml`. Commands: `new`, `build`, `run`, `unpack`. Scene pattern: only entry point has `on_init`/`on_update`/`on_draw`; global state via `system::get_state`/`set_state`. System menu on `Esc`. Frame pacing for high-refresh displays. Complete RNG spec (xoshiro256**, SplitMix64 streaming, Lemire rejection, Fisher-Yates). Exact drawing algorithms (Bresenham DDA, integer disk, ink-only text). Default palette and font bytes in spec. Conformance vectors included. Removed: `.r16` text format, `__code__`/`__meta__`/`__gfx__` sections, `/* rico16:assets */` comments, `Button::Menu` magic button, `fmt` (deferred).
+This section records the choices made for the reference implementation. It is **informative**: it adds no conformance requirements, and another implementation may choose differently as long as it satisfies the normative sections.
+
+- **Language:** Rust.
+- **Windowing and presentation:** `winit` for the window and input, with a pure-Rust software framebuffer (`softbuffer` or `pixels`) blitted with integer scaling ([§3.7](#3-display-and-framebuffer)). No GPU shaders.
+- **Scripting:** Rhai, pinned to one version (`1.27.0`) and built with the minimum feature set needed to make games, with the sandbox of [§9.8](#98-engine-configuration-and-sandbox) enforced.
+- **Math:** the first cut uses the platform's standard floating-point math (`std`). Matching `libm` 0.2.16 bit-for-bit (§5.6) is a later hardening step; until it lands, the first cut is a known, tracked gap against §5.6 and cross-platform bit-identical math is best-effort.
+- **PNG:** a simple lossless PNG encoder/decoder. The payload must be deterministic, but the PNG file bytes need not be ([§13.6](#136-determinism)); any lossless DEFLATE backend is acceptable.
+- **Platforms:** Windows, macOS and Linux are all first-class from the first release.
+- **Distribution:** `unpack` ([§15.4](#154-rico16-unpack-png-output-dir)) is the sharing mechanism — a project travels as one PNG (for example over a chat app) and is unpacked back into a working project. There is no hosted cart library.
+- **Editor:** minimal first (open a project, edit text, build and run, console) and grown feature by feature ([§18.3](#183-scope-notes)).
+
+---
+
+## 22. Changelog
+
+- **1.0 (draft)** — Initial specification. Project-based development (`cart.toml`, `src/`, `assets/`). Real Rhai module imports with embedded sources. Standard modules importable and ambient. PNG v1: 640×480 default, 1280×960 overflow (~378 KB / ~1.76 MB code capacity). RGB-only payload (12 bpp), A=0xFF. No code limit. Explicit asset placement in `cart.toml`. Commands: `new`, `build`, `run`, `unpack`. Scene pattern: only the entry point has `on_init`/`on_update`/`on_draw`; global state via a single reserved `state` variable. System menu on `Esc`. Frame pacing for high-refresh displays. Complete RNG spec (xoshiro256**, SplitMix64 streaming, Lemire rejection, Fisher-Yates). Exact drawing algorithms (Bresenham DDA, integer disk, ink-only text). Default palette and font bytes in the spec. Conformance vectors included. Build determinism is defined for the cart payload, not the PNG file bytes. Reference implementation choices (Rust, `winit` + software framebuffer, pinned Rhai, Windows/macOS/Linux) are recorded in [§21](#21-reference-implementation-informative).
