@@ -1,0 +1,11 @@
+[package]
+name = "rico16-cart"
+description = "cart.toml, the binary cart format and PNG packing for the rico-16 fantasy console"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rico16-core.workspace = true
+thiserror.workspace = true
+toml = { workspace = true }
