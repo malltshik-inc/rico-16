@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["rico16-core", "rico16-cart", "rico16-script"]
+members = ["rico16-core", "rico16-cart", "rico16-script", "rico16-player"]
 
 [workspace.package]
 version = "0.1.0"
@@ -11,6 +11,7 @@ rust-version = "1.85"
 rico16-core = { path = "rico16-core" }
 rico16-cart = { path = "rico16-cart" }
 rico16-script = { path = "rico16-script" }
+rico16-player = { path = "rico16-player" }
 
 clap = { version = "4.5", features = ["derive"] }
 thiserror = "2.0"

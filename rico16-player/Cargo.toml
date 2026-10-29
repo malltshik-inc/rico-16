@@ -1,0 +1,18 @@
+[package]
+name = "rico16-player"
+description = "Window, present path, input mapping and frame loop for the rico-16 fantasy console"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rico16-core.workspace = true
+rico16-cart.workspace = true
+rico16-script.workspace = true
+thiserror.workspace = true
+winit.workspace = true
+pixels.workspace = true
+
+[[bin]]
+name = "rico16-player"
+path = "src/main.rs"

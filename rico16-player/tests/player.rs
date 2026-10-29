@@ -1,0 +1,161 @@
+//! SPEC §14 — the pure parts of the player: pacing, key mapping and the menu.
+
+use std::time::Duration;
+
+use rico16_core::input::Button;
+use rico16_core::limits::{FRAMEBUFFER_LEN, SCREEN_HEIGHT, SCREEN_WIDTH};
+use rico16_player::input::{Reserved, button_for_key, reserved_for_key};
+use rico16_player::menu::{self, ITEMS, MenuAction, SystemMenu};
+use rico16_player::pacing::{FramePacer, frame_interval};
+use winit::keyboard::KeyCode;
+
+/// SPEC §5.1, §14.2 — the frame interval is exactly 1/60 s.
+#[test]
+fn interval_is_one_sixtieth() {
+    assert_eq!(frame_interval(), Duration::from_secs_f64(1.0 / 60.0));
+}
+
+/// SPEC §14.2 — a logical frame may not start sooner than 1/60 s after the last.
+#[test]
+fn pacer_gates_frames() {
+    let mut pacer = FramePacer::new();
+    assert!(pacer.ready(Duration::ZERO), "the first frame is immediate");
+    assert_eq!(pacer.deadline(), Duration::ZERO);
+    pacer.advance(Duration::ZERO);
+
+    assert!(!pacer.ready(Duration::from_millis(10)));
+    assert!(!pacer.ready(Duration::from_millis(16)));
+    assert!(pacer.ready(Duration::from_millis(17)));
+    assert_eq!(pacer.deadline(), frame_interval());
+
+    pacer.advance(Duration::from_millis(17));
+    assert!(!pacer.ready(Duration::from_millis(30)));
+    assert!(pacer.ready(Duration::from_millis(34)));
+}
+
+/// SPEC §14.3 — the eight buttons map by physical key position.
+#[test]
+fn key_map() {
+    assert_eq!(button_for_key(KeyCode::ArrowLeft), Some(Button::Left));
+    assert_eq!(button_for_key(KeyCode::ArrowRight), Some(Button::Right));
+    assert_eq!(button_for_key(KeyCode::ArrowUp), Some(Button::Up));
+    assert_eq!(button_for_key(KeyCode::ArrowDown), Some(Button::Down));
+    assert_eq!(button_for_key(KeyCode::KeyZ), Some(Button::Z));
+    assert_eq!(button_for_key(KeyCode::KeyX), Some(Button::X));
+    assert_eq!(button_for_key(KeyCode::KeyC), Some(Button::C));
+    assert_eq!(button_for_key(KeyCode::KeyV), Some(Button::V));
+    assert_eq!(button_for_key(KeyCode::KeyA), None);
+}
+
+/// SPEC §14.4 — reserved keys are never visible to a cart.
+#[test]
+fn reserved_keys() {
+    assert_eq!(
+        reserved_for_key(KeyCode::Escape, false),
+        Some(Reserved::Menu)
+    );
+    assert_eq!(
+        reserved_for_key(KeyCode::F11, false),
+        Some(Reserved::Fullscreen)
+    );
+    assert_eq!(reserved_for_key(KeyCode::KeyR, true), Some(Reserved::Reset));
+    assert_eq!(
+        reserved_for_key(KeyCode::KeyR, false),
+        None,
+        "R alone is not reserved"
+    );
+    assert_eq!(reserved_for_key(KeyCode::KeyZ, true), None);
+}
+
+/// SPEC §14.5 — menu navigation wraps and maps to actions.
+#[test]
+fn menu_navigation() {
+    let mut menu = SystemMenu::new();
+    assert_eq!(menu.action(), MenuAction::Resume);
+    menu.next();
+    assert_eq!(menu.action(), MenuAction::Restart);
+    menu.next();
+    assert_eq!(menu.action(), MenuAction::Exit);
+    menu.next();
+    assert_eq!(menu.action(), MenuAction::Resume, "wraps forward");
+    menu.prev();
+    assert_eq!(menu.action(), MenuAction::Exit, "wraps backward");
+    assert_eq!(ITEMS.len(), 3);
+}
+
+/// SPEC §14.5 — the menu renders into a separate overlay, not the framebuffer.
+#[test]
+fn menu_renders_into_overlay() {
+    let mut overlay = vec![0u8; FRAMEBUFFER_LEN * 4];
+    SystemMenu::new().render(&mut overlay);
+    assert_eq!(overlay.len(), FRAMEBUFFER_LEN * 4);
+
+    // A dim wash covers the whole screen.
+    assert!(overlay[3] > 0, "the overlay dims the paused cart");
+    // The panel centre is opaque.
+    let centre = (SCREEN_HEIGHT / 2 * SCREEN_WIDTH + SCREEN_WIDTH / 2) * 4;
+    assert_eq!(overlay[centre + 3], 255);
+}
+
+/// SPEC §14.5 — compositing an overlay leaves transparent pixels alone.
+#[test]
+fn overlay_composite() {
+    let mut frame = vec![10u8, 20, 30, 255];
+    let overlay = vec![255u8, 0, 0, 255];
+    menu::composite(&mut frame, &overlay);
+    assert_eq!(frame, [255, 0, 0, 255], "opaque overlay replaces");
+
+    let mut frame = vec![10u8, 20, 30, 255];
+    let overlay = vec![255u8, 0, 0, 0];
+    menu::composite(&mut frame, &overlay);
+    assert_eq!(
+        frame,
+        [10, 20, 30, 255],
+        "transparent overlay leaves the frame"
+    );
+
+    let mut frame = vec![0u8, 0, 0, 255];
+    let overlay = vec![255u8, 255, 255, 128];
+    menu::composite(&mut frame, &overlay);
+    assert_eq!(frame[0], 128, "half-alpha blends");
+}
+
+/// SPEC §14.1 — a directory is a project, a file is a PNG.
+#[test]
+fn source_classification() {
+    let dir = std::env::temp_dir().join(format!("rico16-player-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    assert!(matches!(
+        rico16_player::CartSource::from_path(&dir),
+        rico16_player::CartSource::Project(_)
+    ));
+
+    let file = dir.join("cart.png");
+    std::fs::write(&file, b"x").unwrap();
+    assert!(matches!(
+        rico16_player::CartSource::from_path(&file),
+        rico16_player::CartSource::Png(_)
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// SPEC §14.1 — a project directory loads into script assets.
+#[test]
+fn project_loads_into_assets() {
+    let root = std::env::temp_dir().join(format!("rico16-player-load-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(
+        root.join("cart.toml"),
+        "format = 1\n\n[cart]\ntitle = \"T\"\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("src/main.rhai"), "fn on_init() {}\n").unwrap();
+
+    let source = rico16_player::CartSource::Project(root.clone());
+    let assets = source.load().expect("load");
+    assert_eq!(assets.name, "main.rhai");
+    assert_eq!(assets.code, "fn on_init() {}\n");
+    assert_eq!(source.title(), root.file_name().unwrap().to_string_lossy());
+    let _ = std::fs::remove_dir_all(&root);
+}
