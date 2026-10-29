@@ -4,7 +4,7 @@ A 16-bit fantasy console: **320×240**, **256 indexed colors**, **Rhai** scripti
 
 rico-16 is a self-contained console in the spirit of PICO-8, but built for the 16-bit era: a bigger screen, a wider palette, and a scripting language that doesn't make you learn Lua. Everything a cart needs — code, art, map, palette — lives in one PNG file.
 
-> **Status: spec complete.** Project-based development with `cart.toml`, `src/`, `assets/`. PNG (640×480 or 1280×960) with 12-bit RGB payload. Real Rhai module imports. `system::get_state`/`set_state` for cart state. Full conformance vectors in SPEC.
+> **Status: spec complete (v1 draft), implementation in progress.** Project-based development with `cart.toml`, `src/`, `assets/`. PNG (640×480 or 1280×960) with a 12-bit RGB payload. Real Rhai module imports with embedded sources. A single reserved global `state` variable for cart data. Full conformance vectors in the spec.
 
 ## The console
 
@@ -25,44 +25,40 @@ Exact numbers, edge cases and normative requirements live in [docs/SPEC.md](docs
 
 ## A cart
 
+Only `main.rhai` has the runtime entry points. Modules are libraries with no state of their own; the cart's data lives in the single global `state`, which main and modules both use.
+
 ```rhai
 // src/main.rhai
 import "scenes/play" as play;
 
-let scene = "play";
-let state = #{ px: 160, py: 120 };
-
 fn on_init() {
-    let s = system::get_state();
-    if !s.contains("px") {
-        s["px"] = 160; s["py"] = 120; s["scene"] = "play";
-        system::set_state(s);
-    }
+    state.px = 160;
+    state.py = 120;
+    state.scene = "play";
 }
 
 fn on_update(dt) {
-    let s = system::get_state();
-    if s["scene"] == "play" { s = play::update(dt, s); }
-    system::set_state(s);
+    if state.scene == "play" {
+        play::update(dt);
+    }
 }
 
 fn on_draw() {
-    let s = system::get_state();
-    if s["scene"] == "play" { play::draw(s); }
+    if state.scene == "play" {
+        play::draw();
+    }
 }
 ```
 
 ```rhai
 // src/scenes/play.rhai
-fn update(dt, state) {
-    let next = state.clone();
-    if input::held(Button::Left) { next["px"] -= 2; }
-    next
+fn update(dt) {
+    if input::held(Button::Left) { state.px -= 2; }
 }
 
-fn draw(state) {
+fn draw() {
     gfx::clear(1);
-    gfx::rect_filled(state["px"] - 4, state["py"] - 4, 8, 8, 9);
+    gfx::rect_filled(state.px - 4, state.py - 4, 8, 8, 9);
 }
 ```
 
@@ -92,7 +88,7 @@ my-game/
 `cart.toml` example:
 
 ```toml
-format = 3
+format = 1
 
 [cart]
 title = "Snake"
@@ -149,15 +145,16 @@ In the player window: `Esc` = system menu, `F11` = fullscreen, `Ctrl+R` = restar
 
 ## Roadmap
 
+Milestones track the spec, not the old `.r16` prototype on `main`. Each lands with its conformance tests green.
+
 | | |
 |---|---|
-| M0 | Workspace skeleton, `rico16 new`, cart.toml parser — **done** |
-| M1 | Core framebuffer + drawing ops, player window, input, 60 Hz loop — **done** |
-| M2 | Rhai embedded, script API, module system, error reporting — **done** |
-| M3 | Sprites, tilemap, scrolling via explicit coordinates — **done** |
-| M4 | PNG pack/unpack, deterministic build, conformance vectors — **done** |
-| M5 | TUI editor: edit, run/stop, console, hot reload, palette |
-| M6 | Limit enforcement, docs, sample carts |
+| M0 | Workspace skeleton and `rico16-core`: framebuffer, palette, font, blitting, tilemap, input, RNG |
+| M1 | `rico16-cart`: `cart.toml`, binary cart, PNG pack/unpack, deterministic payload |
+| M2 | `rico16-script`: Rhai engine, global `state`, script API, module system, error reporting |
+| M3 | `rico16-player`: window, present path, input mapping, 60 Hz loop, system menu |
+| M4 | `rico16-cli`: `new` / `build` / `run` / `unpack` |
+| M5 | `rico16-tui`: editor — file tree, code editor, console, palette, hot reload |
 | later | SFX synth and tracker UI, TUI sprite/map editors, WASM web player, gamepads, second player |
 
 ## Building
@@ -167,17 +164,6 @@ Requires a stable Rust toolchain (edition 2024, MSRV 1.85). Windows, Linux and m
 ```sh
 cargo build --workspace
 cargo test --workspace
-```
-
-Working today:
-
-```sh
-cargo run -p rico16-cli -- new hello              # writes project/hello/
-cargo run -p rico16-cli -- new hexed --palette rgb332
-cargo run -p rico16-cli -- build hello            # project → hello/build/hello.png
-cargo run -p rico16-cli -- run hello              # build in memory, run
-cargo run -p rico16-cli -- run hello/build/hello.png  # run packed PNG
-cargo run -p rico16-player -- hello/build/hello.png   # same, without the CLI
 ```
 
 ## Documentation

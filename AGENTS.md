@@ -39,9 +39,16 @@ These are settled design decisions (see SPEC §18). Do not revisit them in a PR;
 - **No GPU work beyond one textured quad.** The console is a framebuffer and a palette; shaders are not the place to implement effects.
 - **`rico16-core` stays pure.** No `std::fs`, `std::time`, `std::thread`, `std::env`, no `SystemTime`, no `Instant`. It must stay `wasm32`-clean so the web player is possible later. Enforce with a test that greps the crate if needed.
 
+## Known gaps and deviations
+
+Recorded deliberately. Where SPEC §19 or §21 relaxes a MUST, those sections are authoritative.
+
+- **Math is platform `std` for now.** SPEC §5.6 requires `sin`, `cos`, `pow`, … to be bitwise-identical to `libm` 0.2.16, but SPEC §19 and §21 defer that hardening and call it a tracked gap. Until it lands the first cut uses the platform's `std` math, and cross-platform bit-identical math is best-effort. Do not close this by silently swapping in another math library: `libm` is the approved addition when the gap is closed.
+- **`state` is provided by a Rhai variable resolver.** SPEC §9.7 wants one global `state` visible to the entry point and to every module. Stock Rhai cannot do that with a `Scope` variable (functions and modules never see the caller's scope), so the engine uses `Engine::on_var` returning a shared `Dynamic` — Rhai's documented "Mutable Global State" pattern. Keep the `#[allow(deprecated)]` for that one API in a single place; the attribute's own message says it is not deprecated, only volatile.
+
 ## Where to change a number
 
-Limits (screen size, tile size, sheet size, map size, code budget, PNG layout) exist in exactly one place: the `limits` module in `rico16-core`, each constant carrying a `// SPEC §x.y` comment. SPEC §7 is the human-facing copy. Changing one without the other is a bug. Both are a **major** version change.
+Limits (screen size, tile size, sheet size, map size, palette, PNG variant sizes and payload capacity) exist in exactly one place: the `limits` module in `rico16-core`, each constant carrying a `// SPEC §x.y` comment. SPEC §7 is the human-facing copy. Changing one without the other is a bug. Both are a **major** version change. There is no code limit: the only ceiling is the PNG container (SPEC §7.4).
 
 ## Changing the script API
 
@@ -56,7 +63,7 @@ Never expose a function that is not in the spec table. Never rename one without 
 ## Changing the cart format
 
 - Every format change needs: SPEC update, changelog entry, and a fixture.
-- `parse → serialize` must be byte-identical for canonical carts (SPEC §10.2). Keep that test green; it is the cheapest defence against silent corruption.
+- `parse → serialize` must be byte-identical for canonical carts, and the binary cart payload must be deterministic for the same source (SPEC §13.6, SPEC §17.5). Keep that test green; it is the cheapest defence against silent corruption.
 - Read permissively (CRLF, BOM, either section order), write canonically.
 - Unknown sections and unknown metadata keys must survive a round-trip. If a change breaks that, it is wrong.
 
@@ -65,7 +72,7 @@ Never expose a function that is not in the spec table. Never rename one without 
 - Pixel-exact tests for every drawing primitive, including clipping at all four edges and fully off-screen draws.
 - Round-trip tests for `cart.toml` and for pack/unpack.
 - A determinism test: run a fixed cart for N frames twice, hash the framebuffer, compare.
-- Conformance vector tests: RNG (§21.1), line (§21.2), circle (§21.3), rgb332 (§21.4), palette anchors (§21.5), CRC (§21.6), dt (§21.7), quantizers (§21.8).
+- Conformance vector tests: RNG (§20.1), line (§20.2), circle (§20.3), rgb332 (§20.4), palette anchors (§20.5), CRC (§20.6), dt (§20.7), quantizers (§20.8).
 - Fuzz-ish edge cases that must never panic: negative coordinates, `w`/`h` ≤ 0, values at 255, map access at the bounds, empty code section, cart with no entry points.
 - No test may depend on wall-clock time, RNG entropy, or the order of directory entries.
 
@@ -96,6 +103,8 @@ Ask before adding a crate. The approved set is deliberately small and each one h
 | `toml` | cart | cart.toml parsing |
 
 Rules: no `anyhow` in library crates (typed errors); no duplicate-purpose crates; no `unsafe` without a written justification in the PR and a comment on the block; keep `player`-only and `tui`-only crates out of `core`.
+
+`rhai` is pinned to exactly one version (SPEC §21): `= 1.27.0`, built with the minimum feature set the sandbox needs. `libm` is the approved addition when the §5.6 math gap is closed; it is not needed until then.
 
 The present path is isolated behind a small trait in `rico16-player` so `pixels` can be replaced by raw `wgpu` without touching anything else.
 
