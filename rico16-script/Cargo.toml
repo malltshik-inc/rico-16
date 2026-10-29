@@ -1,0 +1,10 @@
+[package]
+name = "rico16-script"
+description = "Rhai engine, script API and module system for the rico-16 fantasy console"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rico16-core.workspace = true
+rhai.workspace = true
