@@ -175,6 +175,19 @@ fn void_reckoning_smoke() {
     g.press(Z);
     assert_eq!(g.probe().st, 2, "Z undocks");
 
+    // fly in every direction: a negative heading used to produce a negative
+    // sprite id (Lua's `%` is floored, Rust's is truncated) and spr() walked off
+    // the top of the sheet
+    g.hold(UP, 40);
+    g.hold(UP | 2, 40);
+    g.hold(2, 40);
+    g.hold(2 | DOWN, 40);
+    g.hold(DOWN, 40);
+    g.hold(DOWN | 1, 40);
+    g.hold(1, 40);
+    g.hold(1 | UP, 40);
+    assert_eq!(g.probe().st, 2, "still flying after a full turn");
+
     // and the flight loop keeps running
     g.hold(RIGHT, 60);
     g.hold(X, 50);

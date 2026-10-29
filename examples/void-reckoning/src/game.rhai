@@ -41,6 +41,15 @@ fn mx(a, b) { if a > b { a } else { b } }
 // index goes through this. 1-based, like the original.
 fn at(arr, i) { let i = i.to_int(); if i >= 1 && i <= arr.len { arr[i - 1] } else { () } }
 
+// Lua's `%` is a floored modulo; Rust's is truncated. -1 % 8 is 7 in Lua and
+// -1 here, which made ship_frame return a negative sprite id for a negative
+// heading and sent spr() off the top of the sheet. Anything that can see a
+// negative operand goes through this.
+fn fmodp(a, b) {
+    let r = a % b;
+    if r < 0.0 { r + b } else { r }
+}
+
 fn clampi(v, a, b) {
     if v < a { return a; }
     if v > b { return b; }
@@ -124,12 +133,12 @@ fn lc(s) {
 fn sw(s) { s.len * 8 }
 
 // heading (turns) -> frame 0..7
-fn ship_frame(a) { floor(a * 8.0 + 0.5) % 8 }
+fn ship_frame(a) { fmodp(floor(a * 8.0 + 0.5), 8.0) }
 
 fn ang_lerp(a, b, t) {
-    let d = (b - a) % 1.0;
+    let d = fmodp(b - a, 1.0);
     if d > 0.5 { d -= 1.0; }
-    (a + d * t) % 1.0
+    fmodp(a + d * t, 1.0)
 }
 
 // ---------------------------------------------------------------------------
@@ -863,8 +872,8 @@ fn draw_flight() {
     fade_screen();
     for s in state.stars {
         pset(
-            (s.x - state.camx) / s.z % 128.0,
-            (s.y - state.camy) / s.z % 128.0,
+            fmodp((s.x - state.camx) / s.z, 128.0),
+            fmodp((s.y - state.camy) / s.z, 128.0),
             s.c
         );
     }
