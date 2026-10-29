@@ -52,6 +52,13 @@ pub const MAX_ARRAY_LEN: usize = 65_536;
 pub const MAX_MAP_LEN: usize = 65_536;
 /// SPEC §7 — maximum string length in bytes.
 pub const MAX_STRING_LEN: usize = 1_048_576;
+/// The Rhai parser's expression depth limit, per source file.
+///
+/// Not one of the limits SPEC §7 fixes. It exists only to stop a pathological
+/// script from overflowing the parser's stack, and the engine's default is low
+/// enough to reject ordinary nested loops, so it is raised well clear of real
+/// code rather than left as a trap.
+pub const MAX_EXPR_DEPTH: usize = 256;
 
 /// SPEC §13.1 — fixed binary cart header length before the code section
 /// (magic + version + flags + three length fields + sheet + map + palette).

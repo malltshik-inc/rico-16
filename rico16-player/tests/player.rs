@@ -220,7 +220,10 @@ fn example_carts_run() {
         runtime
             .init()
             .unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
-        for frame in 0..180 {
+        // Enough frames to reach steady state and to catch errors that only
+        // appear after a few updates. Raycasting is slow in a debug build, so
+        // this is deliberately not 60.
+        for frame in 0..30 {
             runtime
                 .step(0)
                 .unwrap_or_else(|e| panic!("{} frame {frame}: {e}", dir.display()));

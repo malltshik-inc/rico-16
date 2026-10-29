@@ -43,8 +43,14 @@ pub fn module(memory: &Rc<Memory>) -> Module {
     });
 
     let mem = memory.clone();
-    impure!(m, "get", move |cx: i64, cy: i64| -> i64 {
-        mem.map.borrow().get(cx, cy) as i64
+    impure!(m, "get", move |ctx: NativeCallContext,
+                            cx: Dynamic,
+                            cy: Dynamic|
+          -> RhaiResult<i64> {
+        // SPEC §6.2 — integer arguments accept floats, floored.
+        let cx = args::to_int(&ctx, &cx, "cx")?;
+        let cy = args::to_int(&ctx, &cy, "cy")?;
+        Ok(mem.map.borrow().get(cx, cy) as i64)
     });
 
     let mem = memory.clone();

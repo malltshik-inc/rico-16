@@ -390,6 +390,43 @@ fn wrong_resource_size() {
     assert!(err.message.contains("sprite sheet"), "{err}");
 }
 
+/// SPEC §9.4.4 — a module that fails to parse names the module, not main.
+#[test]
+fn module_parse_error_names_the_module() {
+    let err = Runtime::new(assets(
+        "import \"lib/broken\" as b;\nfn on_init() { b::x(); }",
+        &[("lib/broken", "fn broken( {")],
+    ))
+    .err()
+    .expect("should fail");
+    assert_eq!(err.cart, "lib/broken", "{err}");
+}
+
+/// SPEC §6.2, §9.8 — nested loops around `return [a + b, c + d]` are accepted.
+///
+/// Rhai's default parser depth limit rejects this, which is a trap rather than
+/// a limit the spec fixes.
+#[test]
+fn nested_loops_returning_an_expression_array_compile() {
+    let mut rt = runtime(
+        "fn find() {\n    let y = 1;\n    while y < 4 {\n        let x = 1;\n        while x < 4 {\n            if x == 2 { return [x + 1, y + 1]; }\n            x += 1;\n        }\n        y += 1;\n    }\n    [0, 0]\n}\nfn on_draw() { let p = find(); print(p[0]); print(p[1]); }",
+    );
+    rt.init().unwrap();
+    rt.step(0).unwrap();
+    assert_eq!(rt.take_output(), ["3", "2"]);
+}
+
+/// SPEC §6.2 — integer arguments accept floats, floored.
+#[test]
+fn integer_arguments_accept_floats() {
+    let mut rt = runtime(
+        "fn on_init() { tilemap::set(2, 3, 7); }\nfn on_draw() { print(tilemap::get(2.4, 3.9)); audio::play(1.5); }",
+    );
+    rt.init().unwrap();
+    rt.step(0).unwrap();
+    assert_eq!(rt.take_output(), ["7"], "floats floor to the same cell");
+}
+
 /// SPEC §4.1 — the palette resource is the size the console fixes.
 #[test]
 fn palette_len() {

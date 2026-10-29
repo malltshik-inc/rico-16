@@ -14,7 +14,7 @@ use rhai::{AST, Dynamic, Engine, Map, Module, OptimizationLevel, Scope};
 use rico16_core::framebuffer::Framebuffer;
 use rico16_core::input::{Button, Input};
 use rico16_core::limits::{
-    DT, MAX_ARRAY_LEN, MAX_CALL_DEPTH, MAX_MAP_LEN, MAX_OPERATIONS, MAX_STRING_LEN,
+    DT, MAX_ARRAY_LEN, MAX_CALL_DEPTH, MAX_EXPR_DEPTH, MAX_MAP_LEN, MAX_OPERATIONS, MAX_STRING_LEN,
 };
 use rico16_core::map::Tilemap;
 use rico16_core::palette::Palette;
@@ -294,6 +294,14 @@ fn build_engine(memory: &Rc<Memory>, state: &Dynamic) -> Engine {
     engine.set_max_map_size(MAX_MAP_LEN);
     engine.set_max_string_size(MAX_STRING_LEN);
 
+    // Rhai's parser depth limit is not one of the limits SPEC §7 fixes, and its
+    // default (32 inside a function) rejects ordinary code: two nested loops
+    // around `return [a + b, c + d]` is enough to trip it, with an error that
+    // says nothing about loops. Raise it well past anything a hand-written cart
+    // needs, while staying bounded so a pathological cart cannot blow the
+    // parser's stack.
+    engine.set_max_expr_depths(MAX_EXPR_DEPTH, MAX_EXPR_DEPTH);
+
     engine.register_type_with_name::<Button>("Button");
 
     let out = memory.clone();
@@ -330,9 +338,10 @@ fn build_modules(
 
     let mut asts: BTreeMap<&str, AST> = BTreeMap::new();
     for (path, source) in &assets.modules {
-        let ast = engine
-            .compile(source)
-            .map_err(|e| from_parse(&assets.name, &e))?;
+        // SPEC §9.4.4 — an error in a module names the module, not the entry
+        // point: a parse error at line 33 of a module is otherwise reported
+        // against `main.rhai`, which may not even have 33 lines.
+        let ast = engine.compile(source).map_err(|e| from_parse(path, &e))?;
         asts.insert(path.as_str(), ast);
     }
 

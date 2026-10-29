@@ -688,6 +688,7 @@ The runtime MUST configure the script engine so that a cart's behaviour is fully
 - **Unavailable to carts:** dynamic evaluation (`eval`), wall-clock or monotonic time, host randomness, filesystem, network, environment, process and OS access, and any module not embedded in the cart. Calling one of these is a script error, never a no-op.
 - **Operation limit:** the limit in [§7](#7-resources-and-limits) applies per entry-point call. The counter resets at the start of `on_init` and at the start of each `on_update` and each `on_draw`. Module functions called during a callback draw from the same per-call budget.
 - **Call depth:** recursion is limited per the [§7](#7-resources-and-limits) table. Exceeding it is a script error; it MUST NOT crash or hang the host.
+- **No incidental parser limits.** The limits in [§7](#7-resources-and-limits) are the limits a cart must respect. A runtime MUST NOT additionally reject ordinary cart code with an implementation-defined parser bound — a nested loop, or a call with several computed arguments, is ordinary. A limit that refuses such code is a defect, not a specification.
 
 A cart MUST NOT depend on any engine behaviour that this document does not fix.
 
@@ -1485,6 +1486,8 @@ This section records the choices made for the reference implementation. It is **
 ---
 
 ## 22. Changelog
+
+- **1.0 (draft), robustness** — §9.8: a runtime must not reject ordinary cart code with an implementation-defined parser bound. The reference runtime's script engine shipped with a low expression-depth default that refused, for example, two nested loops around `return [a + b, c + d]`, reporting "expression exceeds maximum complexity" for a loop. The bound is raised well clear of real code. Also in this pass: `tilemap::get` and `audio::play` now accept floats and floor them, as §6.2 requires of every integer argument, and a module that fails to parse reports the module's path rather than the entry point's (§9.4.4).
 
 - **1.0 (draft), scope cut** — §16: the editor is **deferred to v2** and the `rico16 edit` subcommand is removed. §16.1–§16.6 are withdrawn rather than postponed: they are a starting point for a future design, not a contract. The console, the cart format, the script API and every command a cart author needs (`new`, `build`, `run`, `unpack`) are unchanged. This supersedes the §16.4 amendment below, which is withdrawn with the rest of the section. §18.1, §18.3, §19 and §21 are updated to match.
 
