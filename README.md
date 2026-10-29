@@ -147,7 +147,7 @@ In the player window: `Esc` = system menu, `F11` = fullscreen, `Ctrl+R` = restar
 
 ## Examples
 
-Four carts live in `examples/`. A test builds and runs every one of them at HEAD.
+Five carts live in `examples/`. A test builds and runs every one of them at HEAD.
 
 | Cart | What it shows |
 |---|---|
@@ -155,11 +155,17 @@ Four carts live in `examples/`. A test builds and runs every one of them at HEAD
 | `snake` | modules and the scene pattern, input, `rnd`, and data that lives in `state` |
 | `raycaster` | a Doom-style renderer: a 128×128 level from `assets/map.png`, a DDA per screen column, walls shaded by distance along the palette ramps, sky and floor gradients, and a minimap |
 | `fighter` | a one-on-one fighter: a 40×60 sprite drawn with `sprite::draw_region` (the same art, mirrored with `flip_x` whenever a fighter faces left), twelve shaded poses, attack wind-up and recovery frames with hitboxes, blocking, ground shadows, health bars and a CPU opponent |
+| `void-reckoning` | a port of a real PICO-8 game (gruber & krajzeg): two chapters, a shared engine, a flight sim with foes and asteroids, docking and trade, dialogue with portraits, and a timed find-the-repeated-sequence minigame |
 
 ```sh
 cargo run -p rico16-cli -- run examples/raycaster
 cargo run -p rico16-cli -- run examples/fighter
+cargo run -p rico16-cli -- run examples/void-reckoning
 ```
+
+`void-reckoning` is the interesting one to read if you are porting something. It is the whole of a PICO-8 game — 2,033 lines of Lua across a shared engine and two chapters — rewritten for this console, and it exercises nearly everything: `sprite::draw_region` for 8×8 sprites out of a PICO-8 sheet, a cart-supplied `[palette]` that makes PICO-8's 16 colours exact, `gfx::palette` driving the same motion-trail fade the original gets from `poke`/`sspr`, and the module system for a multi-file cart.
+
+Its port notes, including what could not be carried over, are in the cart's own `src/game.rhai` header.
 
 `raycaster` is worth reading if you want to see the drawing model stretched: the whole scene is 320 `gfx::rect_filled` calls, one per screen column, and the level is a plain grayscale PNG that `cart.toml` places with `[map]`.
 

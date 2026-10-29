@@ -1,0 +1,14 @@
+format = 1
+
+[cart]
+title = "Void Reckoning"
+author = "gruber & krajzeg"
+version = "0.1.0"
+
+[[sprite]]
+file = "assets/sprites.png"
+x = 0
+y = 0
+
+[palette]
+file = "assets/palette.png"
