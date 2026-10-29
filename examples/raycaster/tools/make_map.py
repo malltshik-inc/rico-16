@@ -18,6 +18,7 @@ from pathlib import Path
 WIDTH = HEIGHT = 128
 SEED = 0xD00D
 START_ROOM = (18, 18, 26, 26)  # x0, y0, x1, y1 — the cart starts at (21.5, 21.5)
+WALL_IDS = (32, 96, 160, 224)  # tile ids for the four wall types, spread so the PNG is readable
 
 random.seed(SEED)
 
@@ -69,12 +70,15 @@ def main():
         if grid[y][x] == 0 and not inside_start:
             grid[y][x] = 1
 
-    # Wall types by region, so the level is not one flat colour.
+    # Wall types by region, so the level is not one flat colour. The ids are
+    # spread across the byte range on purpose: SPEC §10.2.3 reads a grayscale
+    # map PNG's sample value as the tile id, so ids of 1-4 would make the file
+    # open as a black square. 32/96/160/224 are grey enough to look at.
     pixels = bytearray()
     for y in range(HEIGHT):
         for x in range(WIDTH):
             if grid[y][x] > 0:
-                pixels.append(1 + ((x // 20 + y // 20) % 4))
+                pixels.append(WALL_IDS[(x // 20 + y // 20) % 4])
             else:
                 pixels.append(0)
 
@@ -134,6 +138,25 @@ def report_best_view(grid):
         px, py = (lo + hi) / 2.0 + 0.5, y + 0.5
 
     print(f"best view: {run} cells clear at ({px}, {py}) angle {angle:.4f}")
+    ascii_preview(grid, px, py)
+
+
+def ascii_preview(grid, x, y):
+    """Print the neighbourhood of the start, so the level can be read in a
+    terminal. The PNG itself is data, not art: the tile ids are the pixels."""
+    print(f"\nlevel around ({x}, {y}) — '#' wall, '.' floor, '@' start")
+    for row in range(int(y) - 10, int(y) + 11):
+        line = ""
+        for col in range(int(x) - 30, int(x) + 31):
+            if not (0 <= row < HEIGHT and 0 <= col < WIDTH):
+                line += " "
+            elif col == int(x) and row == int(y):
+                line += "@"
+            elif grid[row][col] > 0:
+                line += "#"
+            else:
+                line += "."
+        print(line)
 
 
 def dx_of(angle):

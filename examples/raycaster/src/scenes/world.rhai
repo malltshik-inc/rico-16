@@ -159,31 +159,58 @@ fn cast_column(x, rdx, rdy) {
     let height = floor(240.0 / perp);
     let top = 120.0 - height / 2.0 + sin(state.bob) * 2.0;
 
-    // How far along the wall the ray landed, for vertical texture stripes.
+    // How far along the wall the ray landed. This is the texture coordinate:
+    // `u` runs 0..1 across each wall cell and drives the vertical stripes.
     let hit = if side == 0 { state.py + perp * rdy } else { state.px + perp * rdx };
     let u = hit - floor(hit);
-    let band = floor(u * 4.0);
 
-    // Colour: a ramp per wall type, shaded by distance, striped by `u`, and
-    // darkened on north/south faces so corners read as corners.
-    let shade = 15.0 - floor(perp * 1.7) - band * 2.0;
-    if side == 1 { shade -= 3.0; }
-    if shade < 0.0 { shade = 0.0; }
-    if shade > 15.0 { shade = 15.0; }
+    let shade = wall_shade(perp, side, u);
+    let base = ramp_for(tile);
 
-    let y0 = if top < 0.0 { 0 } else { top };
+    let y0 = if top < 0.0 { 0.0 } else { top };
     let y1 = if top + height > 240.0 { 240.0 } else { top + height };
-    if y1 > y0 {
-        gfx::rect_filled(x, y0, 1, y1 - y0, ramp_for(tile) + shade);
+    if y1 <= y0 { return; }
+
+    // Two segments per column: the upper part a shade darker, which reads as
+    // light coming from above.
+    if y1 - y0 > 6.0 {
+        let split = y0 + (y1 - y0) * 0.42;
+        let upper = if shade >= 3.0 { shade - 3.0 } else { 0.0 };
+        gfx::rect_filled(x, y0, 1, split - y0, base + upper);
+        gfx::rect_filled(x, split, 1, y1 - split, base + shade);
+    } else {
+        gfx::rect_filled(x, y0, 1, y1 - y0, base + shade);
     }
 }
 
+/// Wall brightness, 0..15 within the tile's ramp.
+fn wall_shade(perp, side, u) {
+    // Eight vertical stripes per wall cell, alternating light and dark.
+    let band = floor(u * 8.0);
+    let half = floor(band / 2.0);
+    let dark = if band == half * 2.0 { 0.0 } else { 4.0 };
+
+    // A gentle distance falloff: steep enough to read as depth, shallow enough
+    // that a wall at the far end of a corridor is still a wall.
+    let shade = 14.0 - perp * 0.9 - dark;
+
+    // North/south faces a shade darker, so corners read as corners.
+    if side == 1 { shade -= 2.0; }
+
+    if shade < 0.0 { shade = 0.0; }
+    if shade > 15.0 { shade = 15.0; }
+    shade
+}
+
 /// Wall type to palette ramp base. SPEC §4.7: index `16 + ramp * 16 + step`.
+///
+/// Tile ids come from the map PNG, so they are spread across the byte range
+/// (32/96/160/224) rather than 1-4: see the generator.
 fn ramp_for(tile) {
-    if tile == 1 { return 16; }    // red
-    if tile == 2 { return 80; }    // green
-    if tile == 3 { return 128; }   // cyan
-    return 208;                    // magenta
+    if tile < 64 { return 16; }    // red
+    if tile < 128 { return 80; }   // green
+    if tile < 192 { return 128; }  // cyan
+    208                            // magenta
 }
 
 fn draw_hud() {
