@@ -34,7 +34,8 @@ fn fighter(x, facing, floor_y, left, right) {
         vy: 0.0,
         on_ground: true,
         facing: facing,      // 1 faces right, -1 faces left
-        walk: 0.0,           // animation clock
+        walk: 0.0,           // walk animation clock
+        breath: 0,           // slow idle clock
         attack: 0,           // frames left in the current attack, 0 = none
         kind: 0,             // 1 punch, 2 kick
         landed: false,       // this attack has already connected
@@ -54,20 +55,31 @@ fn feet() { this.floor_y - this.y }
 fn centre() { this.x + 20.0 }
 
 /// Which cell of the sheet to draw. See tools/make_sprites.py.
+///
+/// Each attack has three phases. The wind-up and the recovery are not padding:
+/// a move that snaps straight to its extended frame reads as a teleport, and
+/// they are also what make the active window (and therefore the hitbox) feel
+/// earned rather than arbitrary.
 fn pose() {
-    if this.stun > 0 { return 7; }              // hit
+    if this.stun > 0 { return 11; }             // hit
     if this.attack > 0 {
-        if this.kind == 1 { return 4; }         // punch
-        if this.attack > 9 { return 5; }        // kick, wind-up
-        return 6;                               // kick, extended
+        if this.kind == 1 {                     // punch: wind, out, recover
+            if this.attack > 8 { return 5; }
+            if this.attack > 3 { return 6; }
+            return 7;
+        }
+        if this.attack > 12 { return 8; }       // kick: wind, out, recover
+        if this.attack > 5 { return 9; }
+        return 10;
     }
-    if !this.on_ground { return 5; }
-    if this.block { return 3; }                 // crouch behind the guard
+    if !this.on_ground { return 9; }
+    if this.block { return 4; }                 // crouch behind the guard
     if abs(this.vx) > 0.2 {
-        if this.walk > 1.5 { return 1; }        // walk, stride
-        return 2;                               // walk, together
+        if this.walk > 1.5 { return 2; }        // walk, stride
+        return 3;                               // walk, together
     }
-    0                                           // idle
+    if this.breath < 60 { return 0; }           // idle breathes
+    1
 }
 
 fn step() {
@@ -93,6 +105,8 @@ fn step() {
 
     this.walk += 0.3;
     if this.walk > 3.0 { this.walk = 0.0; }
+    this.breath += 1;
+    if this.breath > 120 { this.breath = 0; }
 }
 
 fn face(other) {
@@ -123,7 +137,7 @@ fn control(other) {
 
 fn start(kind) {
     this.kind = kind;
-    this.attack = if kind == 1 { 12 } else { 20 };
+    this.attack = if kind == 1 { 14 } else { 22 };
     this.landed = false;
 }
 
@@ -155,8 +169,8 @@ fn cpu(other) {
 /// Is `f`'s attack in its active frames and not yet spent?
 fn active(f) {
     if f.attack == 0 || f.landed { return false; }
-    if f.kind == 1 { return f.attack <= 9 && f.attack >= 5; }
-    f.attack <= 15 && f.attack >= 7
+    if f.kind == 1 { return f.attack <= 8 && f.attack >= 4; }
+    f.attack <= 12 && f.attack >= 6
 }
 
 /// The attack's box as `[x0, y0, x1, y1]`, in front of `f`.
@@ -237,35 +251,72 @@ fn update(dt) {
 
 fn draw() {
     draw_arena();
+    draw_shadow(state.a);
+    draw_shadow(state.b);
     draw_fighter(state.a, 0);
     draw_fighter(state.b, 1);
     draw_hud();
 }
 
+/// A stone hall: masonry above the horizon, columns, and a floor in
+/// perspective. A flat backdrop makes the fighters look pasted on; something
+/// with structure behind them is most of what a fighting game's arena does.
 fn draw_arena() {
-    // Sky above the horizon, floor below, both as gradient bands. The floor is
-    // a green ramp and the fighters are red and blue, so neither fighter
-    // disappears into the ground.
+    // Courses of masonry.
+    let row = 0;
+    while row < 8 {
+        let y = row * 15;
+        gfx::rect_filled(0, y, 320, 15, 2 + (row % 2));
+        gfx::rect_filled(0, y, 320, 1, 1);
+        row += 1;
+    }
+
+    // Columns, each with a lit edge and a shadowed side.
+    let x = 16;
+    while x < 320 {
+        gfx::rect_filled(x, 26, 24, 94, 3);
+        gfx::rect_filled(x + 2, 26, 5, 94, 4);
+        gfx::rect_filled(x + 17, 26, 5, 94, 1);
+        gfx::rect_filled(x - 3, 22, 30, 4, 4);
+        x += 64;
+    }
+
+    // Floor: stone, lighter towards the viewer.
     let i = 0;
     while i < 8 {
-        gfx::rect_filled(0, i * 15, 320, 15, 176 + 8 - i);
         gfx::rect_filled(0, 120 + i * 15, 320, 15, 80 + i);
         i += 1;
     }
 
-    // A crowd: two rows of coloured heads along the horizon.
-    let x = 0;
-    while x < 320 {
-        let colour = 16 + ((x / 8) % 15) * 16 + 7;
-        gfx::rect_filled(x, 100, 7, 7, colour);
-        gfx::rect_filled(x + 4, 111, 7, 7, colour);
-        x += 12;
+    // Floor joints: horizontal courses spaced by a square, and verticals
+    // radiating from the vanishing point on the horizon.
+    let i = 0;
+    while i < 9 {
+        let y = 120 + i * i * 2;
+        if y < 240 {
+            let w = 30 + i * 34;
+            gfx::rect_filled(160 - w, y, 2 * w, 1, 83);
+        }
+        i += 1;
+    }
+    let i = -5;
+    while i <= 5 {
+        gfx::line(160 + i * 7, 120, 160 + i * 95, 240, 83);
+        i += 1;
     }
 
-    // The ring: a line at the floor and two posts.
+    // The ring line.
     gfx::rect_filled(0, state.floor_y, 320, 2, 5);
-    gfx::rect_filled(state.left - 4.0, 120, 2, state.floor_y - 120.0, 3);
-    gfx::rect_filled(state.right + 2.0, 120, 2, state.floor_y - 120.0, 3);
+}
+
+/// A pool of shade under a fighter, shrinking as it jumps. Without it a
+/// character looks like it is floating rather than standing.
+fn draw_shadow(f) {
+    let half = 13.0 - f.y * 0.12;
+    if half < 5.0 { half = 5.0; }
+    let cx = f.x + 20.0;
+    gfx::rect_filled(cx - half, state.floor_y - 3, half * 2.0, 3, 81);
+    gfx::rect_filled(cx - half * 0.6, state.floor_y - 5, half * 1.2, 2, 81);
 }
 
 fn draw_fighter(f, which) {

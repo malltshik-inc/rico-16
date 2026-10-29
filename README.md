@@ -154,7 +154,7 @@ Four carts live in `examples/`. A test builds and runs every one of them at HEAD
 | `hello` | the smallest interesting cart: `state`, the entry points, a rect and some text |
 | `snake` | modules and the scene pattern, input, `rnd`, and data that lives in `state` |
 | `raycaster` | a Doom-style renderer: a 128×128 level from `assets/map.png`, a DDA per screen column, walls shaded by distance along the palette ramps, sky and floor gradients, and a minimap |
-| `fighter` | a one-on-one fighter: a 40×60 sprite drawn with `sprite::draw_region` (the same art, mirrored with `flip_x` whenever a fighter faces left), an eight-pose animation, attack frames with hitboxes, blocking, health bars and a CPU opponent |
+| `fighter` | a one-on-one fighter: a 40×60 sprite drawn with `sprite::draw_region` (the same art, mirrored with `flip_x` whenever a fighter faces left), twelve shaded poses, attack wind-up and recovery frames with hitboxes, blocking, ground shadows, health bars and a CPU opponent |
 
 ```sh
 cargo run -p rico16-cli -- run examples/raycaster
@@ -165,7 +165,9 @@ cargo run -p rico16-cli -- run examples/fighter
 
 `fighter` is worth reading for the script side. It shows the one mutation pattern that matters in Rhai: arguments are passed by value, so `fn control(f) { f.x += 1 }` silently does nothing. The fighter functions are called *on* the fighter — `state.a.control(state.b)` — so `this` is the map and mutations stick. It also shows why a fighter carries its own copy of the arena bounds: a method called on `state.a` cannot also read `state`, because the runtime sees a re-entrant borrow of the same shared value.
 
-Both examples generate their assets from committed scripts (`tools/make_map.py`, `tools/make_sprites.py`) rather than shipping unexplained blobs. `make_sprites.py` reads the palette out of `docs/SPEC.md` so the art matches the normative default palette.
+Both examples generate their assets from committed scripts (`tools/make_map.py`, `tools/make_sprites.py`) rather than shipping unexplained blobs. `make_sprites.py` reads the palette out of `docs/SPEC.md` so the art matches the normative default palette, and takes `--preview` to print a pose as ASCII with one letter per shading tone.
+
+One thing worth knowing before drawing art for this console: SPEC §7 fixes the sprite sheet at 65,536 bytes for **all** art, and that is the real budget. The fighter uses 24 cells of 40×60 = 88% of it for twelve poses each. Larger characters mean fewer frames — 64×96 leaves room for five poses each, which is not a fighting game. Shading is free by comparison: it is the same pixels in better colours, which is why the fighters get five tones per material rather than two.
 
 ## Roadmap
 
