@@ -4,7 +4,7 @@ A 16-bit fantasy console: **320×240**, **256 indexed colors**, **Rhai** scripti
 
 rico-16 is a self-contained console in the spirit of PICO-8, but built for the 16-bit era: a bigger screen, a wider palette, and a scripting language that doesn't make you learn Lua. Everything a cart needs — code, art, map, palette — lives in one PNG file.
 
-> **Status: spec complete (v1 draft), implementation in progress.** Project-based development with `cart.toml`, `src/`, `assets/`. PNG (640×480 or 1280×960) with a 12-bit RGB payload. Real Rhai module imports with embedded sources. A single reserved global `state` variable for cart data. Full conformance vectors in the spec.
+> **Status: spec complete (v1 draft); the console is implemented.** Project-based development with `cart.toml`, `src/`, `assets/`. PNG (640×480 or 1280×960) with a 12-bit RGB payload. Real Rhai module imports with embedded sources. A single reserved global `state` variable for cart data. Full conformance vectors in the spec.
 
 ## The console
 
@@ -145,16 +145,16 @@ In the player window: `Esc` = system menu, `F11` = fullscreen, `Ctrl+R` = restar
 
 ## Roadmap
 
-Milestones track the spec, not the old `.r16` prototype on `main`. Each lands with its conformance tests green.
+Milestones track the spec. Each landed with its conformance tests green.
 
 | | |
 |---|---|
-| M0 | Workspace skeleton and `rico16-core`: framebuffer, palette, font, blitting, tilemap, input, RNG |
-| M1 | `rico16-cart`: `cart.toml`, binary cart, PNG pack/unpack, deterministic payload |
-| M2 | `rico16-script`: Rhai engine, global `state`, script API, module system, error reporting |
-| M3 | `rico16-player`: window, present path, input mapping, 60 Hz loop, system menu |
-| M4 | `rico16-cli`: `new` / `build` / `run` / `unpack` |
-| M5 | `rico16-tui`: editor — file tree, code editor, console, palette, hot reload |
+| M0 | Workspace skeleton and `rico16-core`: framebuffer, palette, font, blitting, tilemap, input, RNG — **done** |
+| M1 | `rico16-cart`: `cart.toml`, binary cart, PNG pack/unpack, deterministic payload — **done** |
+| M2 | `rico16-script`: Rhai engine, global `state`, script API, module system, error reporting — **done** |
+| M3 | `rico16-player`: window, present path, input mapping, 60 Hz loop, system menu — **done** |
+| M4 | `rico16-cli`: `new` / `build` / `run` / `unpack` — **done** |
+| M5 | `rico16-tui`: editor — file tree, code editor, console, palette, hot reload — **done** |
 | later | SFX synth and tracker UI, TUI sprite/map editors, WASM web player, gamepads, second player |
 
 ## Building
@@ -165,6 +165,21 @@ Requires a stable Rust toolchain (edition 2024, MSRV 1.85). Windows, Linux and m
 cargo build --workspace
 cargo test --workspace
 ```
+
+Working today:
+
+```sh
+cargo run -p rico16-cli -- new hello               # scaffold a project
+cargo run -p rico16-cli -- new hexed --palette rgb332
+cargo run -p rico16-cli -- build hello             # project → hello/build/hello.png
+cargo run -p rico16-cli -- run hello               # build in memory, run
+cargo run -p rico16-cli -- run hello/build/hello.png
+cargo run -p rico16-cli -- unpack hello/build/hello.png out/
+cargo run -p rico16-cli -- edit hello              # terminal editor
+cargo run -p rico16-cli -- run examples/snake      # a playable example
+```
+
+The example carts in `examples/` build and run at HEAD; a test enforces it.
 
 ## Documentation
 

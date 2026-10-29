@@ -159,3 +159,42 @@ fn project_loads_into_assets() {
     assert_eq!(source.title(), root.file_name().unwrap().to_string_lossy());
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// AGENTS.md — every example cart must run at HEAD.
+#[test]
+fn example_carts_run() {
+    let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples");
+    let mut found = 0;
+    for entry in std::fs::read_dir(&examples).expect("examples directory") {
+        let dir = entry.unwrap().path();
+        if !dir.join("cart.toml").is_file() {
+            continue;
+        }
+        found += 1;
+        let source = rico16_player::CartSource::Project(dir.clone());
+        let assets = source
+            .load()
+            .unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
+        let mut runtime = rico16_script::Runtime::new(assets)
+            .unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
+        runtime
+            .init()
+            .unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
+        for frame in 0..180 {
+            runtime
+                .step(0)
+                .unwrap_or_else(|e| panic!("{} frame {frame}: {e}", dir.display()));
+        }
+        let mut rgba = vec![0u8; 320 * 240 * 4];
+        runtime.present_into(&mut rgba);
+        assert!(
+            rgba.iter().any(|&b| b != 0),
+            "{} drew nothing",
+            dir.display()
+        );
+    }
+    assert!(
+        found >= 2,
+        "expected at least two example carts, found {found}"
+    );
+}

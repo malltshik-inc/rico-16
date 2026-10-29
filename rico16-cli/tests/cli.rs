@@ -254,3 +254,31 @@ fn build_without_manifest_fails() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("cart.toml"));
 }
+
+/// AGENTS.md — every example cart must build at HEAD.
+#[test]
+fn example_carts_build() {
+    let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples");
+    let mut found = 0;
+    for entry in std::fs::read_dir(&examples).expect("examples directory") {
+        let dir = entry.unwrap().path();
+        if !dir.join("cart.toml").is_file() {
+            continue;
+        }
+        found += 1;
+        let output = rico16()
+            .args(["build", dir.to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{} failed to build: {}",
+            dir.display(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    assert!(
+        found >= 2,
+        "expected at least two example carts, found {found}"
+    );
+}
