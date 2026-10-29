@@ -1,6 +1,6 @@
 [package]
 name = "rico16-cli"
-description = "the `rico16` binary: new, build, run, unpack, edit"
+description = "the `rico16` binary: new, build, run, unpack"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,7 +9,6 @@ rust-version.workspace = true
 rico16-core.workspace = true
 rico16-cart.workspace = true
 rico16-player.workspace = true
-rico16-tui.workspace = true
 clap.workspace = true
 thiserror.workspace = true
 

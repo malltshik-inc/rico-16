@@ -56,11 +56,6 @@ enum Command {
         /// Directory to write the project into.
         output_dir: PathBuf,
     },
-    /// Open the terminal editor.
-    Edit {
-        /// Project directory containing `cart.toml`.
-        project: PathBuf,
-    },
 }
 
 fn main() -> ExitCode {
@@ -87,14 +82,6 @@ fn run(cli: Cli) -> Result<(), CliError> {
             Ok(())
         }
         Command::Unpack { png, output_dir } => unpack(&png, &output_dir),
-        Command::Edit { project } => {
-            // SPEC §16.4 — the game runs in its own window, so the editor spawns
-            // this same binary with `run`.
-            let program = std::env::current_exe()
-                .map_err(|e| CliError::Message(format!("cannot locate the rico16 binary: {e}")))?;
-            rico16_tui::run(rico16_tui::EditorOptions { project, program })?;
-            Ok(())
-        }
     }
 }
 

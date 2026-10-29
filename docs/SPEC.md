@@ -36,7 +36,7 @@
 
 rico-16 is a fantasy console: a fixed virtual machine with fixed resources, a fixed palette-driven display and an embedded scripting language. This document defines the observable behaviour of the console — what a cart may rely on and what a conforming runtime must do.
 
-It does **not** define internal implementation, crate layout actualities, or the editor's user interface beyond the requirements in [§16](#16-editor).
+It does **not** define internal implementation, crate layout actualities, or the user interface of any editor. v1 has no editor ([§16](#16-editor)).
 
 The three things that make rico-16 a console rather than a game framework:
 
@@ -608,14 +608,14 @@ Signatures below are normative. `color` is an index 0–255. `button` is a `Butt
 | `system::time()` | f64 seconds, `frames * dt` |
 | `system::seed(n)` | reseed the RNG |
 | `system::quit()` | ends the cart after the current frame and exits (see §14.9) |
-| `system::quit(message)` | same, printing `message` to stdout (editor: console pane) first |
+| `system::quit(message)` | same, printing `message` to stdout first |
 | `system::reset()` | resets the cart from its original bytes after the current frame (see §14.9) |
 
 **Output**
 
 | Function | Notes |
 |---|---|
-| `print(value)` | writes `value` as one line to stdout (editor: console pane) |
+| `print(value)` | writes `value` as one line to stdout |
 | `debug(value)` | identical to `print`; for development |
 
 **Audio (stubbed in v1)**
@@ -1120,17 +1120,16 @@ On window focus loss the runtime MUST clear all held buttons. Key-repeat events 
 
 ### 14.8. Error policy
 
-- **Player mode:** print `<file>:<line>:<col>: <message>` to stderr, close the window, exit with code 1. The process MUST NOT panic.
-- **Editor mode:** halt the cart, keep the editor alive, show the message in the console pane. See [§16](#16-editor).
+A script error ends the run: print `<file>:<line>:<col>: <message>` to stderr, close the window, exit with code 1. The process MUST NOT panic.
 
 ### 14.9. Quit and reset
 
 There are two distinct ways to end a cart run:
 
-- **Quit.** `system::quit()` ends the cart after the current frame and exits the process with code 0. `system::quit(message)` prints `message` to stdout first (in the editor, to the console pane) and exits the same way. A message is not an error and MUST NOT go to stderr.
+- **Quit.** `system::quit()` ends the cart after the current frame and exits the process with code 0. `system::quit(message)` prints `message` to stdout first and exits the same way. A message is not an error and MUST NOT go to stderr.
 - **Reset.** `system::reset()` ends the current run after the current frame and immediately starts a new run from the cart's original bytes, without exiting the process. The runtime re-runs `on_init`, resets `system::frames()` to 0, re-initializes the RNG from seed 0 ([§5.5](#5-timing-the-game-loop-determinism)), restores the cart's palette, clears `state` back to `#{}`, and discards all other runtime state. Nothing is preserved across a reset.
 
-The system menu ([§14.5](#145-system-menu)) uses both: **Restart** performs a reset, and **Exit** performs a quit. `system::reset()` is the script-facing equivalent of the editor's hot reload ([§16.3](#163-required-actions)). Reset is not a quit: it MUST NOT exit the process or be reported as an error.
+The system menu ([§14.5](#145-system-menu)) uses both: **Restart** performs a reset, and **Exit** performs a quit. Reset is not a quit: it MUST NOT exit the process or be reported as an error.
 
 ### 14.10. Audio
 
@@ -1213,47 +1212,23 @@ Formats all `.rhai` files in `src/` using a Rhai formatter (deferred; may be rem
 
 ## 16. Editor
 
-### 16.1. Overview
+**Deferred to v2. v1 has no editor, and `rico16` has no `edit` subcommand.**
 
-The editor is a ratatui terminal application (crossterm backend). It is a separate mode of the same binary: `rico16 edit <project>`. The editor is a convenience, not a requirement — any IDE or text editor can edit a project. It starts minimal and grows feature by feature; see [§18.3](#183-scope-notes).
+A cart is a directory of text and PNGs. Any text editor and any pixel-art tool
+can edit it, and `rico16 build` and `rico16 run` are the whole workflow. Nothing
+in the console, the cart format or the script API depends on an editor existing.
 
-### 16.2. Required panes (first milestone)
+An editor is a product in its own right — a file tree, a code editor, a console,
+a palette inspector, run/stop, hot reload, and a way to show a 320×240 indexed
+framebuffer that a terminal cannot render faithfully. Building one well would
+dominate v1's effort while changing nothing about what a cart can do. It is
+therefore out of scope for v1 and returns in a later version
+([§18.1](#181-deferred-not-in-v1-expected-later-design-leaves-room)).
 
-- Project file tree (src/, assets/, cart.toml)
-- Code editor with Rhai syntax highlighting
-- Console (script errors, warnings, `print`-style output)
-- Palette inspector
-
-### 16.3. Required actions
-
-- Run, stop, restart
-- **Build-on-run**: `rico16 run` semantics from the editor
-- **Rebuild on save**: when a `.rhai` or asset file is saved, rebuild in background; hot reload the running cart by resetting it (re-run `on_init`; nothing is preserved, per [§14.9](#149-quit-and-reset))
-
-### 16.4. Game view
-
-The game runs in its own native window. A 320×240 indexed framebuffer needs
-real pixels, and a terminal cannot show it faithfully; the terminal multiplexes
-nothing and only edits and shows text. That window is the **display of record**.
-
-The editor MAY additionally show a live **embedded preview** of the running cart
-in a terminal pane, for convenience while editing. The preview is a
-best-effort, downsampled, palette-quantized view; its size, resolution and
-colour fidelity are implementation-defined and it is not the display of record.
-A cart MUST behave identically whether it is previewed in the terminal or run in
-a window: the preview MUST drive the same runtime with the same fixed timestep
-and the same input, and MUST NOT change what the cart observes.
-
-An editor that offers both MUST make it obvious which one is running, and MUST
-make the way to run, stop and get help visible without documentation.
-
-### 16.5. Save behavior
-
-Saving writes the file to disk. The editor MUST NOT lose edits on a failed parse: a cart that does not parse is a normal state (the user is mid-edit), and the console pane reports what is wrong.
-
-### 16.6. Asset editors
-
-Sprite, map and audio editors are explicitly out of the first milestone ([§18](#18-deferred-features-and-non-goals)).
+The requirements recorded in earlier drafts of this section — panes, actions,
+save behaviour, the game view — are **withdrawn**, not postponed in their
+current form. If an editor returns, they are a starting point to be re-decided,
+not a contract to be satisfied. The changelog records this.
 
 ---
 
@@ -1298,8 +1273,9 @@ The normative conformance vectors live in [§20](#20-conformance-vectors). A run
 
 ### 18.1. Deferred (not in v1, expected later, design leaves room)
 
-- SFX synthesis and a pattern/tracker UI
+- A terminal (TUI) editor, and any other editor ([§16](#16-editor))
 - TUI sprite and map editors
+- SFX synthesis and a pattern/tracker UI
 - Sprite/map/audio asset import (beyond PNG placement)
 - WASM web player
 - Gamepads
@@ -1333,7 +1309,7 @@ The items below are **deliberately staged**: the priority is a working engine an
 
 - **Payload error-correction.** The cart payload carries only a CRC-32, which *detects* corruption but cannot *repair* it ([§13.5](#135-durability-rules)). Redundancy or erasure coding is a later concern.
 - **Audio.** Audio is too large and too under-specified to include now. `audio::play` stays a stub ([§14.10](#1410-audio)); a full sound and pattern model will be specified later.
-- **Editor.** A graphical editor is not required to make games — any IDE or text editor can edit `cart.toml`, `src/` and `assets/`. The reference editor ([§16](#16-editor)) starts minimal (open a project, edit text, build and run, console) and grows feature by feature. It is a convenience, not a dependency.
+- **Editor.** Out of scope for v1, and deliberately so ([§16](#16-editor)). An editor is a product in its own right and would dominate v1's effort while changing nothing about what a cart can do. A project is plain text and PNGs, so any editor works; the build and run commands are the whole workflow. It returns in a later version.
 
 Two things are explicitly **in scope** and will be built:
 
@@ -1392,7 +1368,7 @@ These sections will be revised as the engine and its games mature.
 | Rhai | One pinned version, minimal feature set | Stability and safety over feature breadth |
 | Math (first cut) | Platform `std`; `libm` bit-exactness is later | Playable games first; §5.6 hardening is tracked |
 | `unpack` | Implemented | Single-file project sharing without a hosted library |
-| Editor | Minimal first, grown feature by feature | Not required to make games |
+| Editor | Deferred to v2 | An editor is a product in its own right; it changes nothing about what a cart can do |
 | Milestone scope | Engine and playable games first; audio and payload error-correction later | Playability before polish; see [§18.3](#183-scope-notes) |
 
 ---
@@ -1502,14 +1478,16 @@ This section records the choices made for the reference implementation. It is **
 - **PNG:** a simple lossless PNG encoder/decoder. The payload must be deterministic, but the PNG file bytes need not be ([§13.6](#136-determinism)); any lossless DEFLATE backend is acceptable.
 - **Platforms:** Windows, macOS and Linux are all first-class from the first release.
 - **Distribution:** `unpack` ([§15.4](#154-rico16-unpack-png-output-dir)) is the sharing mechanism — a project travels as one PNG (for example over a chat app) and is unpacked back into a working project. There is no hosted cart library.
-- **Editor:** minimal first (open a project, edit text, build and run, console) and grown feature by feature ([§18.3](#183-scope-notes)).
+- **Editor:** none in v1 ([§16](#16-editor)). A project is plain text and PNGs, so any editor works; a built-in editor returns in a later version, redesigned rather than grown from the withdrawn v1 sketch.
 
 ---
 
 ## 22. Changelog
 
+- **1.0 (draft), scope cut** — §16: the editor is **deferred to v2** and the `rico16 edit` subcommand is removed. §16.1–§16.6 are withdrawn rather than postponed: they are a starting point for a future design, not a contract. The console, the cart format, the script API and every command a cart author needs (`new`, `build`, `run`, `unpack`) are unchanged. This supersedes the §16.4 amendment below, which is withdrawn with the rest of the section. §18.1, §18.3, §19 and §21 are updated to match.
+
 - **1.0 (draft), correction** — §6.5: the font bitmap is **bit 0 = leftmost pixel**. The normative bytes are, and always were, the LSB-first public-domain 8×8 font; the prose previously said "bit 7 = leftmost", which renders every glyph mirrored. The bytes are unchanged; only the description was wrong. Implementations that followed the prose literally must flip the bit order.
 
-- **1.0 (draft), amendment** — §16.4: the native window is named the display of record, and the editor may now show an embedded terminal preview. The preview is explicitly best-effort and must not change what a cart observes. The editor is required to make run/stop/help discoverable on screen.
+- **1.0 (draft), amendment (withdrawn)** — §16.4: the native window was named the display of record and the editor was permitted an embedded terminal preview. Withdrawn by the scope cut above; recorded here only so the history is not rewritten.
 
 - **1.0 (draft)** — Initial specification. Project-based development (`cart.toml`, `src/`, `assets/`). Real Rhai module imports with embedded sources. Standard modules importable and ambient. PNG v1: 640×480 default, 1280×960 overflow (~378 KB / ~1.76 MB code capacity). RGB-only payload (12 bpp), A=0xFF. No code limit. Explicit asset placement in `cart.toml`. Commands: `new`, `build`, `run`, `unpack`. Scene pattern: only the entry point has `on_init`/`on_update`/`on_draw`; global state via a single reserved `state` variable. System menu on `Esc`. Frame pacing for high-refresh displays. Complete RNG spec (xoshiro256**, SplitMix64 streaming, Lemire rejection, Fisher-Yates). Exact drawing algorithms (Bresenham DDA, integer disk, ink-only text). Default palette and font bytes in the spec. Conformance vectors included. Build determinism is defined for the cart payload, not the PNG file bytes. Reference implementation choices (Rust, `winit` + software framebuffer, pinned Rhai, Windows/macOS/Linux) are recorded in [§21](#21-reference-implementation-informative).

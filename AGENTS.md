@@ -15,14 +15,15 @@ Guidance for anyone — human or AI agent — changing this repository. Read thi
 | Path | Owns | Must not |
 |---|---|---|
 | `rico16-core` | Framebuffer, palette, blitting, tilemap data, input state, RNG, constants from SPEC §7 | Touch the filesystem, clock, threads, environment, OS RNG, or any windowing crate |
-| `rico16-script` | Rhai engine, module registration, module resolver, hot reload | Contain rendering logic or resource constants |
+| `rico16-script` | Rhai engine, module registration, module resolver | Contain rendering logic or resource constants |
 | `rico16-cart` | `cart.toml` parse/serialize, binary encoding, PNG pack/unpack | Know about Rhai execution or windows |
 | `rico16-player` | Window, present path, key mapping, main loop, frame pacing | Define behaviour the spec does not describe |
-| `rico16-tui` | ratatui editor, embedded game preview | Duplicate cart parsing, own the display of record |
 | `rico16-cli` | `rico16` binary and subcommand wiring | Hold logic that belongs in a library crate |
 | `docs/` | SPEC.md and supporting documents | Contradict SPEC.md |
 
-Dependency direction is strictly downward: `cli` → {`tui`, `player`, `cart`, `script`, `core`}; `tui`/`player` → {`cart`, `script`, `core`}; `script` → `core`; `cart` → `core`. Cycles are a defect.
+Dependency direction is strictly downward: `cli` → {`player`, `cart`, `script`, `core`}; `player` → {`cart`, `script`, `core`}; `script` → `core`; `cart` → `core`. Cycles are a defect.
+
+v1 has **no editor crate**. An editor is deferred ([SPEC §16](../docs/SPEC.md)); do not add a `rico16-tui` back without a spec change.
 
 ## Hard guardrails
 
@@ -93,7 +94,6 @@ Ask before adding a crate. The approved set is deliberately small and each one h
 | Crate | Used by | Job |
 |---|---|---|
 | `rhai` | script | scripting |
-| `ratatui`, `crossterm` | tui | editor |
 | `winit` | player | window and input |
 | `pixels` (fallback: raw `wgpu`) | player | one texture, one quad |
 | `png` | cart | encode/decode |
@@ -102,7 +102,7 @@ Ask before adding a crate. The approved set is deliberately small and each one h
 | `clap` | cli | argument parsing |
 | `toml` | cart | cart.toml parsing |
 
-Rules: no `anyhow` in library crates (typed errors); no duplicate-purpose crates; no `unsafe` without a written justification in the PR and a comment on the block; keep `player`-only and `tui`-only crates out of `core`.
+Rules: no `anyhow` in library crates (typed errors); no duplicate-purpose crates; no `unsafe` without a written justification in the PR and a comment on the block; keep `player`-only crates out of `core`.
 
 `rhai` is pinned to exactly one version (SPEC §21): `= 1.27.0`, built with the minimum feature set the sandbox needs. `libm` is the approved addition when the §5.6 math gap is closed; it is not needed until then.
 

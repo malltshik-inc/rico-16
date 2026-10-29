@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["rico16-core", "rico16-cart", "rico16-script", "rico16-player", "rico16-cli", "rico16-tui"]
+members = ["rico16-core", "rico16-cart", "rico16-script", "rico16-player", "rico16-cli"]
 
 [workspace.package]
 version = "0.1.0"
@@ -13,7 +13,6 @@ rico16-cart = { path = "rico16-cart" }
 rico16-script = { path = "rico16-script" }
 rico16-player = { path = "rico16-player" }
 rico16-cli = { path = "rico16-cli" }
-rico16-tui = { path = "rico16-tui" }
 
 clap = { version = "4.5", features = ["derive"] }
 thiserror = "2.0"
@@ -23,5 +22,3 @@ rhai = "=1.27.0"
 toml = { version = "0.8", features = ["preserve_order"] }
 png = "0.17"
 crc32fast = "1.4"
-ratatui = "0.29"
-crossterm = "0.28"

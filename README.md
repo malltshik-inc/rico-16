@@ -1,6 +1,6 @@
 # rico-16
 
-A 16-bit fantasy console: **320×240**, **256 indexed colors**, **Rhai** scripting, a **TUI editor**, and carts that pack into a **PNG**.
+A 16-bit fantasy console: **320×240**, **256 indexed colors**, **Rhai** scripting, and carts that pack into a **PNG**.
 
 rico-16 is a self-contained console in the spirit of PICO-8, but built for the 16-bit era: a bigger screen, a wider palette, and a scripting language that doesn't make you learn Lua. Everything a cart needs — code, art, map, palette — lives in one PNG file.
 
@@ -19,7 +19,6 @@ rico-16 is a self-contained console in the spirit of PICO-8, but built for the 1
 | Code | no fixed limit; PNG capacity only (~378 KB default, ~1.76 MB overflow) |
 | Input | 4 directions + `Z` `X` `C` `V`, one player, `Esc` = system menu |
 | Carts | project directory (`cart.toml` + `src/` + `assets/`) → packed PNG |
-| Editor | terminal UI: project tree, code editor, console, hot reload, palette |
 
 Exact numbers, edge cases and normative requirements live in [docs/SPEC.md](docs/SPEC.md). That document wins over everything else in this repository, including this README.
 
@@ -113,41 +112,19 @@ The trade is stated plainly: cover art is 12-bit colour, and a cart PNG must nev
 
 ## Editor
 
-`rico16 edit <project>` opens a [ratatui](https://github.com/ratatui/ratatui) terminal UI with a project tree, a code editor with Rhai highlighting, a console pane for errors and prints, a palette inspector, and run/stop with hot reload.
+**There is no editor in v1, on purpose.** A cart is plain text and PNGs, so any text editor and any pixel-art tool works, and `rico16 build` and `rico16 run` are the whole workflow.
 
-The running cart can be shown two ways:
-
-- **`F5` — embedded preview** inside the editor. A 320×240 framebuffer cannot be shown faithfully in a terminal, so this is a downsampled, palette-quantized half-block view: handy while editing, not the display of record.
-- **`F8` — its own native window.** Real pixels, integer scaling, the real thing.
-
-Both drive the same runtime with the same fixed timestep, so a cart behaves identically either way (SPEC §16.4).
-
-The footer always shows the keys, and `F1` opens the full list:
-
-| Key | Action |
-|---|---|
-| `F1` / `?` | help |
-| `F5` | build and run in the embedded preview |
-| `F6` | stop |
-| `F7` | restart |
-| `F8` | run in its own native window |
-| `Ctrl+S` | save (hot-reloads a running cart) |
-| `Tab` | move focus between tree, editor and game |
-| `Esc` | leave the game pane |
-| `Ctrl+Q` | quit |
-
-Pixel-art tools are intentionally *not* in the first milestone. Carts are text, so any editor works until the built-in ones land.
+An editor is a product in its own right — file tree, code editor, console, palette inspector, run/stop, hot reload, plus the awkward problem of showing a 320×240 indexed framebuffer in a terminal that cannot render it faithfully. Building one well would dominate v1's effort while changing nothing about what a cart can do. It is deferred to v2 ([SPEC §16](docs/SPEC.md)); the earlier v1 sketch is withdrawn rather than half-built.
 
 ## Repository layout
 
 ```
 rico16-core     framebuffer, palette, blitting, tilemap, input, RNG
                 (pure: no filesystem, no clock, no threads, wasm-clean)
-rico16-script   Rhai engine, script API bindings, module resolver, hot reload
+rico16-script   Rhai engine, script API bindings, module resolver
 rico16-cart     cart.toml parser, binary encoding, PNG pack/unpack
 rico16-player   window, input mapping, main loop, frame pacing
-rico16-tui      ratatui editor
-rico16-cli      the `rico16` binary: new / build / run / unpack / edit
+rico16-cli      the `rico16` binary: new / build / run / unpack
 docs/           SPEC.md and friends
 ```
 
@@ -159,7 +136,6 @@ rico16 build my-game               # project → packed PNG
 rico16 run my-game                 # build in memory, run
 rico16 run my-game.png             # run packed PNG directly
 rico16 unpack my-game.png out/     # inspect a shared cart
-rico16 edit my-game                # TUI editor
 ```
 
 In the player window: `Esc` = system menu, `F11` = fullscreen, `Ctrl+R` = restart. Arrows and `Z X C V` map to the eight buttons by physical key position. `system::quit(message)` prints the message and exits 0; a script error prints `<file>:<line>:<col>: <message>` and exits 1.
@@ -175,8 +151,7 @@ Milestones track the spec. Each landed with its conformance tests green.
 | M2 | `rico16-script`: Rhai engine, global `state`, script API, module system, error reporting — **done** |
 | M3 | `rico16-player`: window, present path, input mapping, 60 Hz loop, system menu — **done** |
 | M4 | `rico16-cli`: `new` / `build` / `run` / `unpack` — **done** |
-| M5 | `rico16-tui`: editor — file tree, code editor, console, palette, hot reload — **done** |
-| later | SFX synth and tracker UI, TUI sprite/map editors, WASM web player, gamepads, second player |
+| v2 | Editor, SFX synth and tracker UI, TUI sprite/map editors, WASM web player, gamepads, second player |
 
 ## Building
 
@@ -196,7 +171,6 @@ cargo run -p rico16-cli -- build hello             # project → hello/build/hel
 cargo run -p rico16-cli -- run hello               # build in memory, run
 cargo run -p rico16-cli -- run hello/build/hello.png
 cargo run -p rico16-cli -- unpack hello/build/hello.png out/
-cargo run -p rico16-cli -- edit hello              # terminal editor
 cargo run -p rico16-cli -- run examples/snake      # a playable example
 ```
 
