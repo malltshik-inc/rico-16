@@ -165,7 +165,10 @@ cargo run -p rico16-cli -- run examples/fighter
 
 `fighter` is worth reading for the script side. It shows the one mutation pattern that matters in Rhai: arguments are passed by value, so `fn control(f) { f.x += 1 }` silently does nothing. The fighter functions are called *on* the fighter — `state.a.control(state.b)` — so `this` is the map and mutations stick. It also shows why a fighter carries its own copy of the arena bounds: a method called on `state.a` cannot also read `state`, because the runtime sees a re-entrant borrow of the same shared value.
 
-Both examples generate their assets from committed scripts (`tools/make_map.py`, `tools/make_sprites.py`) rather than shipping unexplained blobs. `make_sprites.py` reads the palette out of `docs/SPEC.md` so the art matches the normative default palette, and takes `--preview` to print a pose as ASCII with one letter per shading tone.
+Both carts' assets are plain PNGs, editable with any pixel-art tool. Two layouts are worth knowing:
+
+- `raycaster/assets/map.png` is 128×128 grayscale, and SPEC §10.2.3 reads the sample value as the tile id — so the tile ids *are* the pixels. 0 is open floor and 32/96/160/224 are the four wall types, which is why the file looks like a grey maze rather than a picture.
+- `fighter/assets/fighters.png` is a 256×256 sheet of 40×60 cells: pose `p` of fighter `f` sits at `x = (p % 6) * 40`, `y = (f * 2 + p / 6) * 60`. The twelve poses, in order, are idle, breathe, walk0, walk1, crouch, punch wind-up, punch, punch recover, kick wind-up, kick, kick recover, hit. Both fighters are drawn facing right; the cart mirrors one with `flip_x`.
 
 One thing worth knowing before drawing art for this console: SPEC §7 fixes the sprite sheet at 65,536 bytes for **all** art, and that is the real budget. The fighter uses 24 cells of 40×60 = 88% of it for twelve poses each. Larger characters mean fewer frames — 64×96 leaves room for five poses each, which is not a fighting game. Shading is free by comparison: it is the same pixels in better colours, which is why the fighters get five tones per material rather than two.
 
