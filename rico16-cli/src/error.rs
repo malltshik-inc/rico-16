@@ -15,6 +15,10 @@ pub enum CliError {
     #[error("{0}")]
     Player(#[from] rico16_player::PlayerError),
 
+    /// The editor failed.
+    #[error("{0}")]
+    Tui(#[from] rico16_tui::TuiError),
+
     /// A file operation failed.
     #[error("{0}")]
     Io(#[from] std::io::Error),

@@ -1,0 +1,13 @@
+[package]
+name = "rico16-tui"
+description = "the ratatui terminal editor for the rico-16 fantasy console"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rico16-core.workspace = true
+rico16-cart.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+thiserror.workspace = true
