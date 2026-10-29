@@ -1,0 +1,11 @@
+format = 1
+
+[cart]
+title = "Fighter"
+author = "rico-16"
+version = "0.1.0"
+
+[[sprite]]
+file = "assets/fighters.png"
+x = 0
+y = 0
