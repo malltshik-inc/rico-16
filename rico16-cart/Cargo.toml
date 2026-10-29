@@ -10,3 +10,4 @@ rico16-core.workspace = true
 thiserror.workspace = true
 toml = { workspace = true }
 crc32fast.workspace = true
+png.workspace = true

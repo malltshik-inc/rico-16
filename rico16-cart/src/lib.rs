@@ -10,8 +10,10 @@ pub mod binary;
 pub mod crc;
 pub mod error;
 pub mod manifest;
+pub mod png;
 
 pub use binary::{BinaryCart, FORMAT_VERSION, MAGIC, Module, metadata_from_manifest};
 pub use crc::crc32;
 pub use error::CartError;
 pub use manifest::{CartMeta, CartToml, DEFAULT_ENTRY, FORMAT_V1, SpritePlacement};
+pub use png::{Art, BLOB_MAGIC, BLOB_VERSION, Variant};
