@@ -370,10 +370,50 @@ pub fn decode_png_rgba8(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), CartError> 
     Ok((info.width, info.height, rgba))
 }
 
+/// SPEC §10.2.3 — decode a 128×128 map PNG to tile ids.
+///
+/// Grayscale: the sample value is the id. Indexed: the palette index is the id.
+/// RGB(A): BT.601 luma, clamped to 0–255. Low-bit-depth inputs are rejected
+/// rather than guessed at.
+pub fn map_tile_ids(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), CartError> {
+    let mut decoder = png::Decoder::new(Cursor::new(bytes));
+    decoder.set_transformations(png::Transformations::STRIP_16);
+    let mut reader = decoder.read_info().map_err(|e| png_err("<map png>", e))?;
+    let info = reader.info().clone();
+    if info.bit_depth != png::BitDepth::Eight {
+        return Err(CartError::Asset(format!(
+            "map png must be 8-bit, found {:?}",
+            info.bit_depth
+        )));
+    }
+    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let frame = reader
+        .next_frame(&mut buf)
+        .map_err(|e| png_err("<map png>", e))?;
+    buf.truncate(frame.buffer_size());
+
+    let ids = match info.color_type {
+        png::ColorType::Grayscale | png::ColorType::Indexed => buf,
+        png::ColorType::Rgb => buf
+            .chunks_exact(3)
+            .map(|px| bt601(px[0], px[1], px[2]))
+            .collect(),
+        png::ColorType::Rgba => buf
+            .chunks_exact(4)
+            .map(|px| bt601(px[0], px[1], px[2]))
+            .collect(),
+        png::ColorType::GrayscaleAlpha => buf.chunks_exact(2).map(|px| px[0]).collect(),
+    };
+    Ok((info.width, info.height, ids))
+}
+
+fn bt601(r: u8, g: u8, b: u8) -> u8 {
+    (((r as u32) * 299 + (g as u32) * 587 + (b as u32) * 114 + 500) / 1000).min(255) as u8
+}
+
 fn quantize4(v: u8) -> u8 {
     ((v as u32 * 15 + 127) / 255) as u8
 }
-
 fn png_err(path: &str, e: png::DecodingError) -> CartError {
     CartError::Png {
         path: path.into(),
