@@ -1,13 +1,6 @@
 [workspace]
 resolver = "3"
-members = [
-    "rico16-core",
-    "rico16-script",
-    "rico16-cart",
-    "rico16-player",
-    "rico16-tui",
-    "rico16-cli",
-]
+members = ["rico16-core"]
 
 [workspace.package]
 version = "0.1.0"
@@ -16,13 +9,9 @@ rust-version = "1.85"
 
 [workspace.dependencies]
 rico16-core = { path = "rico16-core" }
-rico16-script = { path = "rico16-script" }
-rico16-cart = { path = "rico16-cart" }
-rico16-player = { path = "rico16-player" }
-rico16-tui = { path = "rico16-tui" }
 
 clap = { version = "4.5", features = ["derive"] }
 thiserror = "2.0"
 winit = "0.30"
 pixels = "0.15"
-rhai = "1.27"
+rhai = "=1.27.0"

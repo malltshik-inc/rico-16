@@ -1,0 +1,8 @@
+[package]
+name = "rico16-core"
+description = "Framebuffer, palette, drawing primitives, tilemap, input and RNG for the rico-16 fantasy console"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
