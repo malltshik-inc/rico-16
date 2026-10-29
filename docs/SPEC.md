@@ -326,7 +326,7 @@ Changing the algorithm or the default seed is a **major** version change: it bre
 
 6.5. `gfx::text` renders an 8×8 fixed built-in font, advancing 8 PU per glyph, with `\n` moving down 8 PU and returning x to the call's start. The font covers printable ASCII 32–126; other code points (including multi-byte UTF-8, control chars, tabs) render as a placeholder box, **each counting as 1 glyph (8 PU)**. Only **ink** pixels are written; the other pixels of the 8×8 cell are left as they were. `gfx::text_width(str)` returns `first_line.chars().count() * 8` where `first_line` is the substring before the first `\n` (or the whole string if no `\n`). The font lives in the console, not in the cart, and there is no mechanism to replace it — carts cannot break text rendering, and text is one asset format we never have to invent.
 
-**Font bitmap (normative, 8 rows × 8 cols, bit 7 = leftmost pixel):**
+**Font bitmap (normative, 8 rows × 8 cols, bit 0 = leftmost pixel):**
 
 The placeholder glyph (used for every scalar outside U+0020..=U+007E) is:
 ```
@@ -1494,5 +1494,7 @@ This section records the choices made for the reference implementation. It is **
 ---
 
 ## 22. Changelog
+
+- **1.0 (draft), correction** — §6.5: the font bitmap is **bit 0 = leftmost pixel**. The normative bytes are, and always were, the LSB-first public-domain 8×8 font; the prose previously said "bit 7 = leftmost", which renders every glyph mirrored. The bytes are unchanged; only the description was wrong. Implementations that followed the prose literally must flip the bit order.
 
 - **1.0 (draft)** — Initial specification. Project-based development (`cart.toml`, `src/`, `assets/`). Real Rhai module imports with embedded sources. Standard modules importable and ambient. PNG v1: 640×480 default, 1280×960 overflow (~378 KB / ~1.76 MB code capacity). RGB-only payload (12 bpp), A=0xFF. No code limit. Explicit asset placement in `cart.toml`. Commands: `new`, `build`, `run`, `unpack`. Scene pattern: only the entry point has `on_init`/`on_update`/`on_draw`; global state via a single reserved `state` variable. System menu on `Esc`. Frame pacing for high-refresh displays. Complete RNG spec (xoshiro256**, SplitMix64 streaming, Lemire rejection, Fisher-Yates). Exact drawing algorithms (Bresenham DDA, integer disk, ink-only text). Default palette and font bytes in the spec. Conformance vectors included. Build determinism is defined for the cart payload, not the PNG file bytes. Reference implementation choices (Rust, `winit` + software framebuffer, pinned Rhai, Windows/macOS/Linux) are recorded in [§21](#21-reference-implementation-informative).

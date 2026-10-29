@@ -154,6 +154,21 @@ fn generated_label_is_deterministic() {
     assert_eq!(a.len(), Variant::DEFAULT.pixels());
 }
 
+/// SPEC §6.5 — the label's text is not mirrored (bit 0 is the leftmost pixel).
+#[test]
+fn generated_label_text_is_not_mirrored() {
+    let art = generated_label("L", "", &DEFAULT_PALETTE, Variant::DEFAULT);
+    let w = Variant::DEFAULT.width as usize;
+    let at = |x: usize, y: usize| art[y * w + x];
+    // 'L' row 0 is 0x0F: ink in the left four columns, blank in the right four.
+    assert_ne!(at(24, 32), [0, 0, 2], "ink at the start of the top bar");
+    assert_eq!(
+        at(24 + 12, 32),
+        [0, 0, 2],
+        "the top bar does not reach the right"
+    );
+}
+
 /// SPEC §13.2.5 — a label that is already the variant size maps to itself.
 #[test]
 fn cover_fit_identity() {

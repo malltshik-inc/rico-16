@@ -97,6 +97,32 @@ fn menu_renders_into_overlay() {
     assert_eq!(overlay[centre + 3], 255);
 }
 
+/// SPEC §6.5 — the menu's text is not mirrored (bit 0 is the leftmost pixel).
+#[test]
+fn menu_text_is_not_mirrored() {
+    let mut overlay = vec![0u8; FRAMEBUFFER_LEN * 4];
+    SystemMenu::new().render(&mut overlay);
+
+    let x0 = (SCREEN_WIDTH as i64 - 160) / 2;
+    let y0 = (SCREEN_HEIGHT as i64 - 88) / 2;
+    let at = |x: i64, y: i64| {
+        let i = (y as usize * SCREEN_WIDTH + x as usize) * 4;
+        [overlay[i], overlay[i + 1], overlay[i + 2], overlay[i + 3]]
+    };
+
+    // 'P' row 0 is 0x3F: the top bar covers the left six columns at scale 2.
+    assert_eq!(
+        at(x0 + 12, y0 + 12),
+        [255, 255, 255, 255],
+        "ink on the left"
+    );
+    assert_eq!(
+        at(x0 + 12 + 12, y0 + 12),
+        [24, 24, 32, 255],
+        "the top bar does not extend to the right"
+    );
+}
+
 /// SPEC §14.5 — compositing an overlay leaves transparent pixels alone.
 #[test]
 fn overlay_composite() {

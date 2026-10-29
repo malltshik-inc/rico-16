@@ -1,7 +1,7 @@
 //! SPEC §6.5 — the built-in 8×8 font.
 //!
 //! The font lives in the console, not in the cart, and cannot be replaced.
-//! Rows are top to bottom, bit 7 is the leftmost pixel. Printable ASCII
+//! Rows are top to bottom, **bit 0 is the leftmost pixel**. Printable ASCII
 //! 32–126 are the public-domain 8×8 font of Daniel Hepper (tracing to Marcel
 //! Sondaar's transcription of the IBM VGA 8×8 font); the bytes below are
 //! normative.
@@ -147,7 +147,8 @@ pub fn draw_text(fb: &mut Framebuffer, text: &str, x: i64, y: i64, color: u8) {
                 continue;
             }
             for col in 0..8i64 {
-                if bits & (0x80 >> col) != 0 {
+                // SPEC §6.5 — bit 0 is the leftmost pixel.
+                if bits & (0x01 << col) != 0 {
                     fb.set(cx + col, cy + row as i64, color);
                 }
             }

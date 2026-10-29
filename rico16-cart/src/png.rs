@@ -483,7 +483,8 @@ fn draw_text(
         let glyph = font::glyph(ch);
         for (row, bits) in glyph.iter().enumerate() {
             for col in 0..8i64 {
-                if bits & (0x80 >> col) != 0 {
+                // SPEC §6.5 — bit 0 is the leftmost pixel.
+                if bits & (0x01 << col) != 0 {
                     for sy in 0..scale {
                         for sx in 0..scale {
                             let px = cx + col * scale + sx;

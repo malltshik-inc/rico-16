@@ -207,6 +207,25 @@ fn clipping_edges() {
     assert_eq!(count_nonzero(&fb), 0, "fully off-screen draws are no-ops");
 }
 
+/// SPEC §6.5 — the font bitmap is bit 0 = leftmost, so glyphs are not mirrored.
+#[test]
+fn font_bit_order_is_lsb_first() {
+    // 'L' = `0F 06 06 06 46 66 7F 00`: a top bar on the left and a left stem.
+    let mut fb = Framebuffer::new();
+    gfx::text(&mut fb, "L", 0, 0, 1);
+
+    for col in 0..4 {
+        assert_eq!(fb.get(col, 0), Some(1), "top bar covers cols 0..4");
+    }
+    for col in 4..8 {
+        assert_eq!(fb.get(col, 0), Some(0), "top bar does not reach col {col}");
+    }
+    assert_eq!(fb.get(1, 1), Some(1), "stem is on the left");
+    assert_eq!(fb.get(2, 1), Some(1));
+    assert_eq!(fb.get(5, 1), Some(0), "stem is not mirrored to the right");
+    assert_eq!(fb.get(7, 7), Some(0));
+}
+
 /// SPEC §6.5 — `gfx::text_width` and ink-only text, including the placeholder.
 #[test]
 fn text_and_width() {

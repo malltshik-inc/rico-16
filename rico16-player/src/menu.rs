@@ -130,7 +130,8 @@ fn draw_text(buf: &mut [u8], text: &str, x: i64, y: i64, scale: i64, color: [u8;
         let glyph = font::glyph(ch);
         for (row, bits) in glyph.iter().enumerate() {
             for col in 0..8i64 {
-                if bits & (0x80 >> col) == 0 {
+                // SPEC §6.5 — bit 0 is the leftmost pixel.
+                if bits & (0x01 << col) == 0 {
                     continue;
                 }
                 for sy in 0..scale {
