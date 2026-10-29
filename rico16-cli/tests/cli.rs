@@ -255,10 +255,74 @@ fn build_without_manifest_fails() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("cart.toml"));
 }
 
+/// SPEC §15.2, §15.3 — `build` and `run` default to the current directory.
+#[test]
+fn build_defaults_to_the_current_directory() {
+    let scratch = Scratch::new("default-dir");
+    assert!(
+        rico16()
+            .args(["new", scratch.path("hello").to_str().unwrap()])
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    let output = rico16()
+        .arg("build")
+        .current_dir(scratch.path("hello"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(scratch.path("hello/build/hello.png").is_file());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("payload bytes used"));
+}
+
+/// SPEC §15.2 — defaulting to `.` still fails clearly when there is no project.
+#[test]
+fn build_defaults_fail_clearly_without_a_manifest() {
+    let scratch = Scratch::new("default-dir-empty");
+    let output = rico16()
+        .arg("build")
+        .current_dir(&scratch.root)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("cart.toml"));
+}
+
+/// SPEC §15.2 — an explicit argument still wins over the default.
+#[test]
+fn build_still_accepts_an_explicit_project() {
+    let scratch = Scratch::new("explicit-dir");
+    assert!(
+        rico16()
+            .args(["new", scratch.path("hello").to_str().unwrap()])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let output = rico16()
+        .args(["build", scratch.path("hello").to_str().unwrap()])
+        .current_dir(&scratch.root)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(scratch.path("hello/build/hello.png").is_file());
+}
+
 /// AGENTS.md — every example cart must build at HEAD.
 #[test]
 fn example_carts_build() {
     let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples");
+    let scratch = Scratch::new("examples");
     let mut found = 0;
     for entry in std::fs::read_dir(&examples).expect("examples directory") {
         let dir = entry.unwrap().path();
@@ -266,8 +330,14 @@ fn example_carts_build() {
             continue;
         }
         found += 1;
+
+        // Build a copy: building writes `build/<slug>.png` next to the
+        // manifest, and a test must not leave artifacts in the repository.
+        let copy = scratch.root.join(dir.file_name().unwrap());
+        copy_tree(&dir, &copy);
+
         let output = rico16()
-            .args(["build", dir.to_str().unwrap()])
+            .args(["build", copy.to_str().unwrap()])
             .output()
             .unwrap();
         assert!(
@@ -281,4 +351,21 @@ fn example_carts_build() {
         found >= 2,
         "expected at least two example carts, found {found}"
     );
+}
+
+/// Copy a directory tree, skipping any `build/` output.
+fn copy_tree(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        if entry.file_name() == "build" {
+            continue;
+        }
+        let target = to.join(entry.file_name());
+        if entry.path().is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
+    }
 }

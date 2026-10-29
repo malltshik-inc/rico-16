@@ -1156,9 +1156,10 @@ Creates a new project directory with:
 
 `--palette rgb332` bakes the `rgb332` preset into `cart.toml` (adds `[palette]` with a generated palette file or inline default).
 
-### 15.2. `rico16 build <project> [--label <image>] [--variant <default|overflow>]`
+### 15.2. `rico16 build [<project>] [--label <image>] [--variant <default|overflow>]`
 
 Builds the project to a packed PNG.
+- `<project>` is the project directory containing `cart.toml`, and defaults to the current directory.
 - Reads `cart.toml`, validates, compiles assets, resolves imports, packs.
 - `--label` provides custom cover art (resampled to PNG dimensions).
 - `--variant` forces PNG size: `default` (640×480) or `overflow` (1280×960). Default is auto: use default, switch to overflow if payload exceeds capacity.
@@ -1166,9 +1167,10 @@ Builds the project to a packed PNG.
 - Reports used/capacity bytes on success.
 - Exits with code 0 on success, non-zero on error with clear message.
 
-### 15.3. `rico16 run <project|png>`
+### 15.3. `rico16 run [<project|png>]`
 
 Runs a cart.
+- The argument is a project directory or a `.png` file, and defaults to the current directory.
 - If argument is a directory (contains `cart.toml`): builds in memory, then runs.
 - If argument is a `.png` file: loads and runs directly (v1).
 - No separate build step needed for project directories.

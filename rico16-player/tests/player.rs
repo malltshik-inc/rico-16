@@ -186,6 +186,20 @@ fn project_loads_into_assets() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+/// SPEC §14.1 — a path with no file name (`.`, `..`) still names the project.
+#[test]
+fn project_without_a_file_name_names_itself() {
+    let root = std::env::temp_dir().join(format!("rico16-player-name-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("a/b")).unwrap();
+
+    // `.../a/b/..` has no file name of its own; it resolves to `.../a`.
+    let source = rico16_player::CartSource::Project(root.join("a/b/.."));
+    assert_eq!(source.title(), "a");
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 /// AGENTS.md — every example cart must run at HEAD.
 #[test]
 fn example_carts_run() {

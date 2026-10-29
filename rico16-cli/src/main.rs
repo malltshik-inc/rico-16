@@ -35,7 +35,8 @@ enum Command {
     },
     /// Build a project into a packed PNG.
     Build {
-        /// Project directory containing `cart.toml`.
+        /// Project directory containing `cart.toml` (default: the current directory).
+        #[arg(default_value = ".")]
         project: PathBuf,
         /// Custom cover art PNG.
         #[arg(long)]
@@ -46,7 +47,8 @@ enum Command {
     },
     /// Run a project directory or a packed PNG.
     Run {
-        /// Project directory or `.png` file.
+        /// Project directory or `.png` file (default: the current directory).
+        #[arg(default_value = ".")]
         cart: PathBuf,
     },
     /// Reconstruct a project from a shared cart PNG.

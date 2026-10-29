@@ -68,16 +68,21 @@ impl CartSource {
 
     /// The name used in error reports and the window title.
     pub fn title(&self) -> String {
-        match self {
-            CartSource::Project(root) => root
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "cart".to_string()),
-            CartSource::Png(path) => path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "cart".to_string()),
-        }
+        let path = match self {
+            CartSource::Project(root) => root,
+            CartSource::Png(path) => path,
+        };
+        // `file_name` is `None` for `.` and `..`, so fall back to the resolved
+        // directory name: `rico16 run` from inside a project should still say
+        // which project it is.
+        path.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .or_else(|| {
+                std::fs::canonicalize(path)
+                    .ok()
+                    .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            })
+            .unwrap_or_else(|| "cart".to_string())
     }
 }
 

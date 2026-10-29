@@ -132,11 +132,16 @@ docs/           SPEC.md and friends
 
 ```sh
 rico16 new my-game                 # scaffold a project
+rico16 build                       # build the project in the current directory
 rico16 build my-game               # project → packed PNG
+rico16 run                         # build and run the current directory
 rico16 run my-game                 # build in memory, run
 rico16 run my-game.png             # run packed PNG directly
 rico16 unpack my-game.png out/     # inspect a shared cart
 ```
+
+`build` and `run` default to the current directory, so from inside a project the
+bare commands are enough:
 
 In the player window: `Esc` = system menu, `F11` = fullscreen, `Ctrl+R` = restart. Arrows and `Z X C V` map to the eight buttons by physical key position. `system::quit(message)` prints the message and exits 0; a script error prints `<file>:<line>:<col>: <message>` and exits 1.
 
@@ -172,6 +177,14 @@ cargo run -p rico16-cli -- run hello               # build in memory, run
 cargo run -p rico16-cli -- run hello/build/hello.png
 cargo run -p rico16-cli -- unpack hello/build/hello.png out/
 cargo run -p rico16-cli -- run examples/snake      # a playable example
+```
+
+Or from inside a project, with no arguments:
+
+```sh
+cd examples/snake
+cargo run -p rico16-cli -- build                   # writes build/snake.png
+cargo run -p rico16-cli -- run                     # builds and runs
 ```
 
 The example carts in `examples/` build and run at HEAD; a test enforces it.
