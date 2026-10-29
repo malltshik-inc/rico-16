@@ -241,3 +241,78 @@ fn example_carts_run() {
         "expected at least two example carts, found {found}"
     );
 }
+
+/// The fighter example: a fighter's sprite follows the way it is facing.
+///
+/// This was wrong once. The flip was keyed to *which* fighter it was — fighter 1
+/// was always mirrored — so a fighter that walked past its opponent kept facing
+/// the old way while its hitboxes had already turned around.
+#[test]
+fn fighter_sprite_flips_with_facing() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/fighter");
+
+    let facing_right = capture_red_fighter(&dir, 0);
+    let facing_left = capture_red_fighter(&dir, 250);
+
+    assert!(!facing_right.is_empty(), "the red fighter was not drawn");
+    assert_eq!(
+        facing_right.len(),
+        facing_left.len(),
+        "both captures settle to the same pose"
+    );
+
+    let mirrored: Vec<Vec<bool>> = facing_right
+        .iter()
+        .map(|row| row.iter().rev().copied().collect())
+        .collect();
+    assert_ne!(
+        mirrored, facing_right,
+        "the idle pose is asymmetric, so this test is able to fail"
+    );
+    assert_eq!(
+        mirrored, facing_left,
+        "the sprite did not flip when the fighter turned around"
+    );
+}
+
+/// Run the fighter cart with Right held for `hold_right` frames, let it settle,
+/// and return the red fighter's pixels cropped to their bounding box.
+///
+/// Only y >= 125 is scanned: the crowd along the horizon also uses the red ramp.
+fn capture_red_fighter(dir: &std::path::Path, hold_right: u32) -> Vec<Vec<bool>> {
+    let assets = rico16_player::CartSource::Project(dir.to_path_buf())
+        .load()
+        .expect("load the fighter cart");
+    let mut runtime = rico16_script::Runtime::new(assets).expect("runtime");
+    runtime.init().expect("init");
+
+    for _ in 0..hold_right {
+        runtime.step(0b10).expect("step holding Right");
+    }
+    for _ in 0..40 {
+        runtime.step(0).expect("settle");
+    }
+
+    let fb = runtime.memory().framebuffer.borrow();
+    let (mut x0, mut x1, mut y0, mut y1) = (i64::MAX, -1i64, i64::MAX, -1i64);
+    for y in 125..240 {
+        for x in 0..320 {
+            if (16..=31).contains(&fb.get(x, y).unwrap_or(0)) {
+                x0 = x0.min(x);
+                x1 = x1.max(x);
+                y0 = y0.min(y);
+                y1 = y1.max(y);
+            }
+        }
+    }
+    if x1 < 0 {
+        return Vec::new();
+    }
+    (y0..=y1)
+        .map(|y| {
+            (x0..=x1)
+                .map(|x| (16..=31).contains(&fb.get(x, y).unwrap_or(0)))
+                .collect()
+        })
+        .collect()
+}

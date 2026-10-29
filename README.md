@@ -154,7 +154,7 @@ Four carts live in `examples/`. A test builds and runs every one of them at HEAD
 | `hello` | the smallest interesting cart: `state`, the entry points, a rect and some text |
 | `snake` | modules and the scene pattern, input, `rnd`, and data that lives in `state` |
 | `raycaster` | a Doom-style renderer: a 128×128 level from `assets/map.png`, a DDA per screen column, walls shaded by distance along the palette ramps, sky and floor gradients, and a minimap |
-| `fighter` | a one-on-one fighter: a 40×60 sprite drawn with `sprite::draw_region` (fighter 1 is the same art mirrored with `flip_x`), an eight-pose animation, attack frames with hitboxes, blocking, health bars and a CPU opponent |
+| `fighter` | a one-on-one fighter: a 40×60 sprite drawn with `sprite::draw_region` (the same art, mirrored with `flip_x` whenever a fighter faces left), an eight-pose animation, attack frames with hitboxes, blocking, health bars and a CPU opponent |
 
 ```sh
 cargo run -p rico16-cli -- run examples/raycaster

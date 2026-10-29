@@ -270,7 +270,9 @@ fn draw_arena() {
 
 fn draw_fighter(f, which) {
     let pose = f.pose();
-    // Fighter 1 is the same art mirrored: sprite::draw_region's flip_x.
+    // `which` picks the colour (the sheet row); the *flip* follows the facing,
+    // so a fighter that walks past its opponent turns around. The art faces
+    // right, so facing left means mirrored.
     sprite::draw_region(
         (pose % 6) * 40,
         (which * 2 + pose / 6) * 60,
@@ -278,7 +280,7 @@ fn draw_fighter(f, which) {
         60,
         f.x,
         f.floor_y - 60.0 - f.y,
-        which == 1,
+        f.facing < 0,
         false,
     );
 }
